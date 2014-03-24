@@ -1,0 +1,439 @@
+<html>
+<head>
+<title> Шашки </title>
+</head>
+<body>
+<H1>Шашки</H1>
+	<button id='get_btn'>Построить доску!</button>
+	<button id='Del_nigger_btn'>Сыграть с компьютером(Вы играете чёрными)</button>
+	<div id = "div1">
+	</div>
+	
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js"></script>
+	<script>
+	var table1 = '';
+	var count = 0;
+	$('#get_btn').click(function() {
+		table1 = table1 + '<table style=\'border: 1px solid;\'><tbody>';
+		for (i=0; i < 8; i++) {
+		table1 = table1 + '<tr>';
+	
+		 for (j=0; j < 8; j++){
+		if (i % 2 === 0) {
+			if (j % 2 === 0)
+				table1 = table1 + '<td style=\'border: 1px solid;\'><img id='+count+' src = "void.png"></img></td>';
+			else
+			if (i <= 2)
+				table1 = table1 + '<td style=\'border: 1px solid;\'><img id='+count+' src = "white.png"></img></td>';
+			else
+			if (i >= 5)
+				table1 = table1 + '<td style=\'border: 1px solid;\'><img id='+count+' src = "black.png"></img></td>';
+			else
+				table1 = table1 + '<td style=\'border: 1px solid; ;\'><img id='+count+' src = "without.png"></td>';
+				
+		 }
+		 else
+		 if (j % 2 === 0)
+			if (i <= 2)
+				table1 = table1 + '<td style=\'border: 1px solid;\'><img id='+count+' src = "white.png"></img></td>';
+			else
+				if (i >= 5)
+					table1 = table1 + '<td style=\'border: 1px solid;\'><img id='+count+' src = "black.png"></img></td>';
+				else
+					table1 = table1 + '<td style=\'border: 1px solid;\'><img id='+count+' src = "without.png"></td>';					
+		else
+			table1 = table1 + '<td style=\'border: 1px solid;\'><img id='+count+' src = "void.png"></img></td>';
+			
+		count = count + 1;
+		 
+		 }
+			
+		
+			table1 = table1 + '</tr>';
+		}
+		table1 = table1 + '</tbody></table>';
+	
+		$('#div1').append(table1);
+	
+	var id = '';
+	var img = '';
+	var hod = 'w';
+	var tern_ok = false;
+	var flag;
+	
+	function checkShashk(h) {
+		var l = 0;
+		kol = false;
+		for (l = 0; l < 64; l++) {
+			if (h === 'w' && $('#' + l).attr('src') === 'white.png') {
+				kol = true;
+			}
+			if (h === 'b' && $('#' + l).attr('src') === 'black.png') {
+				kol = true;
+			}	
+		}
+		//console.log(kol);
+		return kol;
+	}
+	
+	function check(hod) {
+		var i = 0;
+		var Shashki = [];
+		for (i = 0; i < Shashki.lenght; i++) {
+			delete Shashki[i];
+		}
+		var find = false;
+		for (i = 0; i < 64; i++) {
+			if(hod === 'w') {
+				if ($('#' + i).attr('src') === 'white.png') {
+					if ($('#' + (i + 7)).attr('src') != 'white.png' && $('#' + (i + 7)).attr('src') != 'without.png') {
+						if ($('#' + (i + 14)).attr('src') === 'without.png') {
+							Shashki[i] = i;
+							find = true;
+						}
+					}
+			
+					if ($('#' + (i + 9)).attr('src') != 'white.png' && $('#' + (i + 9)).attr('src') != 'without.png') {
+						if ($('#' + (i + 18)).attr('src') === 'without.png') {
+							Shashki[i] = i;
+							find = true;
+						}
+					}
+			
+					if ($('#' + (i - 9)).attr('src') != 'white.png' && $('#' + (i - 9)).attr('src') != 'without.png') {
+						if ($('#' + (i - 18)).attr('src') === 'without.png') {
+							Shashki[i] = i;
+							find = true;
+						}
+					}
+			
+					if ($('#' + (i - 7)).attr('src') != 'white.png' && $('#' + (i - 7)).attr('src') != 'without.png') {
+						if ($('#' + (i - 14)).attr('src') === 'without.png') {
+							Shashki[i] = i;
+							find = true;
+						}
+					}
+				}
+			}
+			
+			if(hod === 'b') {
+				if ($('#' + i).attr('src') === 'black.png') {
+					if ($('#' + (i + 7)).attr('src') != 'black.png' && $('#' + (i + 7)).attr('src') != 'without.png') {
+						if ($('#' + (i + 14)).attr('src') === 'without.png') {
+							Shashki[i] = i;
+							find = true;
+						}
+					}
+			
+					if ($('#' + (i + 9)).attr('src') != 'black.png' && $('#' + (i + 9)).attr('src') != 'without.png') {
+						if ($('#' + (i + 18)).attr('src') === 'without.png') {
+							Shashki[i] = i;
+							find = true;
+						}
+					}
+			
+					if ($('#' + (i - 9)).attr('src') != 'black.png' && $('#' + (i - 9)).attr('src') != 'without.png') {
+						if ($('#' + (i - 18)).attr('src') === 'without.png') {
+							Shashki[i] = i;
+							find = true;
+						}
+					}
+			
+					if ($('#' + (i - 7)).attr('src') != 'black.png' && $('#' + (i - 7)).attr('src') != 'without.png') {
+						if ($('#' + (i - 14)).attr('src') === 'without.png') {
+							Shashki[i] = i;
+							find = true;
+						}
+					}
+				}
+			}		
+		}
+		if (find) {
+			return Shashki;
+		}
+		else
+			return find;
+	}
+	
+	/*
+	function CheckDamka() {
+		for (i = 0; i < 64; i++) {
+			if ($('#' + i).attr('src') === 'white.png' && i > 55) {
+				$('#' + i).attr('src','Damka_white.png');
+			}
+			if ($('#' + i).attr('src') === 'black.png' && i < 8) {
+				$('#' + i).attr('src','Damka_black.png');
+			}
+		}
+	}
+	*/
+	
+	$('img').click(function() {
+	flag = false;
+	//i = 0;
+	checkflag = false;
+	tern_ok = false;
+		if (id === '') {
+			if (hod === 'w' && ($(this).attr('src') === 'white.png' || $(this).attr('src') === 'Damka_white.png')){
+					if(typeof(check(hod)) === 'object') {
+						for (i = 0; i < 64; i++) {
+							if (parseFloat($(this).attr('id')) === check(hod)[i]) {
+								checkflag = true;
+							}
+						}
+						if(checkflag) {
+							$(this).animate({opacity : '0.5'});
+							id = $(this).attr('id');
+							img = $(this).attr('src');
+							tern_ok = true;
+						}
+						if(!checkflag) {
+							alert('Вы можете съесть чужую шашку!');
+							tern_ok = false;
+						}
+					}
+					else {
+						$(this).animate({opacity : '0.5'});
+						id = $(this).attr('id');
+						img = $(this).attr('src');
+						tern_ok = true;
+					}
+			}
+			
+				if (hod === 'b' && ($(this).attr('src') === 'black.png' || $(this).attr('src') === 'Damka_black.png')){
+					if(typeof(check(hod)) === 'object') {
+						for (i = 0; i < 64; i++) {
+							if (parseFloat($(this).attr('id')) === check(hod)[i]) {
+								checkflag = true;
+								console.log($(this).attr('id'));
+							}
+						}
+						if(checkflag) {
+							$(this).animate({opacity : '0.5'});
+							id = $(this).attr('id');
+							img = $(this).attr('src');
+							tern_ok = true;
+						}
+						if(!checkflag) {
+							alert('Вы можете съесть чужую шашку!');
+							tern_ok = false;
+						}
+					}
+					else {
+							$(this).animate({opacity : '0.5'});
+							id = $(this).attr('id');
+							img = $(this).attr('src');
+							tern_ok = true;
+					}
+				}
+			console.log(hod);
+			console.log(id);
+		}
+		else
+			if ($(this).attr('id') === id) {
+				$(this).animate({opacity : '1'});								//css('background', 'white');
+				id = '';
+			}
+				if ($(this).attr('src') === 'without.png'){
+					tern_ok = true;
+				}
+		if (tern_ok){
+			if (id != '' && id != $(this).attr('id')) {							
+				if (parseFloat($(this).attr('id')) === parseFloat(id) + 7 || parseFloat($(this).attr('id')) === parseFloat(id) - 7 || parseFloat($(this).attr('id')) === parseFloat(id) + 9 || parseFloat($(this).attr('id')) === parseFloat(id) - 9) {
+					if ($(this).attr('src') === 'without.png') { 
+						$('#' + id).attr('src', 'without.png');
+						$(this).attr('src', img);
+						$('#' + id).animate({opacity : '1'});								//css('background', 'white');
+						id = '';
+					}
+					else
+						alert('Неверно выделена вторая ячейка')						
+				}
+				else
+					if($('#' + id).attr('src') == 'white.png'){
+						if (parseFloat($(this).attr('id')) === parseFloat(id) + 14 && $(this).attr('src') === 'without.png') {	
+							if ($('#' + parseFloat($(this).attr('id') - 7)).attr('src') === 'black.png'){
+								$('#' + id).attr('src', 'without.png');
+								$(this).attr('src', img);
+								$('#' + parseFloat($(this).attr('id') - 7)).attr('src','without.png');
+								$('#' + id).animate({opacity : '1'});								//css('background', 'white');
+								id = '';
+								//flag = true;
+							}
+						}
+						else
+							if (parseFloat($(this).attr('id')) === parseFloat(id) - 14 && $(this).attr('src') === 'without.png') {		
+								if ($('#' + (parseFloat($(this).attr('id')) + 7)).attr('src') === 'black.png'){
+									$('#' + id).attr('src', 'without.png');
+									$(this).attr('src', img);
+									$('#' + (parseFloat($(this).attr('id')) + 7)).attr('src','without.png');
+									$('#' + id).animate({opacity : '1'});								//css('background', 'white');
+									id = '';
+									//flag = true;
+								}
+							}
+						else
+							if (parseFloat($(this).attr('id')) === parseFloat(id) + 18 && $(this).attr('src') === 'without.png') {		
+								if ($('#' + (parseFloat($(this).attr('id')) - 9)).attr('src') === 'black.png'){
+									$('#' + id).attr('src', 'without.png');
+									$(this).attr('src', img);
+									$('#' + (parseFloat($(this).attr('id')) - 9)).attr('src','without.png');
+									$('#' + id).animate({opacity : '1'});								//css('background', 'white');
+									id = '';
+									//flag = true;
+								}
+							}
+						else
+							if (parseFloat($(this).attr('id')) === parseFloat(id) - 18 && $(this).attr('src') === 'without.png') {		
+								if ($('#' + (parseFloat($(this).attr('id')) + 9)).attr('src') === 'black.png'){
+									$('#' + id).attr('src', 'without.png');
+									$(this).attr('src', img);
+									$('#' + (parseFloat($(this).attr('id')) + 9)).attr('src','without.png');
+									$('#' + id).animate({opacity : '1'});								//css('background', 'white');
+									id = '';
+									//flag = true;
+								}
+							}
+					}
+					else	
+						if($('#' + id).attr('src') == 'black.png'){
+							if (parseFloat($(this).attr('id')) === parseFloat(id) + 14 && $(this).attr('src') === 'without.png') {	
+								if ($('#' + parseFloat($(this).attr('id') - 7)).attr('src') === 'white.png'){
+									$('#' + id).attr('src', 'without.png');
+									$(this).attr('src', img);
+									$('#' + parseFloat($(this).attr('id') - 7)).attr('src','without.png');
+									$('#' + id).animate({opacity : '1'});								//css('background', 'white');
+									id = '';
+									//flag = true;
+								}
+							}
+							else
+								if (parseFloat($(this).attr('id')) === parseFloat(id) - 14 && $(this).attr('src') === 'without.png') {		
+									if ($('#' + (parseFloat($(this).attr('id')) + 7)).attr('src') === 'white.png'){
+										$('#' + id).attr('src', 'without.png');
+										$(this).attr('src', img);
+										$('#' + (parseFloat($(this).attr('id')) + 7)).attr('src','without.png');
+										$('#' + id).animate({opacity : '1'});								//css('background', 'white');
+										id = '';
+										//flag = true;
+									}
+								}
+							else
+								if (parseFloat($(this).attr('id')) === parseFloat(id) + 18 && $(this).attr('src') === 'without.png') {		
+									if ($('#' + (parseFloat($(this).attr('id')) - 9)).attr('src') === 'white.png'){
+										$('#' + id).attr('src', 'without.png');
+										$(this).attr('src', img);
+										$('#' + (parseFloat($(this).attr('id')) - 9)).attr('src','without.png');
+										$('#' + id).animate({opacity : '1'});								//css('background', 'white');
+										id = '';
+										//flag = true;
+									}
+								}
+							else
+								if (parseFloat($(this).attr('id')) === parseFloat(id) - 18 && $(this).attr('src') === 'without.png') {		
+									if ($('#' + (parseFloat($(this).attr('id')) + 9)).attr('src') === 'white.png'){
+										$('#' + id).attr('src', 'without.png');
+										$(this).attr('src', img);
+										$('#' + (parseFloat($(this).attr('id')) + 9)).attr('src','without.png');
+										$('#' + id).animate({opacity : '1'});								//css('background', 'white');
+										id = '';
+										//flag = true;
+									}
+								}
+						}
+						/*
+						else
+							if($('#' + id).attr('src') === 'Damka_black.png' || $('#' + id).attr('src') === 'Damka_white.png'){
+								if (Math.abs(parseFloat($(this).attr('id')) - parseFloat(id)) % 7 === 0) {	
+									if($(this).attr('src') === 'without.png'){
+									//if ($('#' + parseFloat($(this).attr('id') - 7)).attr('src') === 'white.png'){
+										$('#' + id).attr('src', 'without.png');
+										$(this).attr('src', img);
+										$('#' + parseFloat($(this).attr('id') - 7)).attr('src','without.png');
+										$('#' + id).animate({opacity : '1'});
+										if(parseFloat($(this).attr('id')) > parseFloat(id)) {
+											for (i = math.abs(parseFloat($(this).attr('id'))); i > parseFloat(id); i - 7) {
+												$('#' + i).attr('src','without.png');
+											}
+										}
+										else {
+											for (i = parseFloat($(this).attr('id')); i < parseFloat(id); i + 7) {
+												$('#' + i).attr('src','without.png');
+											}
+										}
+										id = '';									
+										//flag = true;
+									}
+								}
+								if (Math.abs(parseFloat($(this).attr('id')) - parseFloat(id)) % 9 === 0) {
+									if($(this).attr('src') === 'without.png'){
+									//if ($('#' + parseFloat($(this).attr('id') - 7)).attr('src') === 'white.png'){
+										$('#' + id).attr('src', 'without.png');
+										$(this).attr('src', img);
+										$('#' + parseFloat($(this).attr('id') - 7)).attr('src','without.png');
+										$('#' + id).animate({opacity : '1'});								//css('background', 'white');
+										if (parseFloat($(this).attr('id')) > parseFloat(id)) {
+											for (i = math.abs(parseFloat($(this).attr('id'))); i > parseFloat(id); i - 9) {
+												$('#' + i).attr('src','without.png');
+											}
+										}
+										else {
+											for (i = parseFloat($(this).attr('id')); i < parseFloat(id); i + 9) {
+												$('#' + i).attr('src','without.png');
+											}
+										}
+										id = '';
+										//flag = true;										
+									}
+								}
+							}
+							*/
+							
+							
+				if (!flag){
+					if (hod === 'w')
+						hod = 'b';
+					else 
+						hod = 'w';
+				}
+			}
+			CheckDamka();
+		}
+			tern_ok = false;
+			console.log(hod);
+			console.log(id);
+	 }
+	)
+	$('img').click(function() {
+		if (hod === 'w') {
+			if (!checkShashk('b')) {
+				alert('Победа Белых!');	
+			}
+		}
+				
+		if (hod === 'b') {
+			if (!checkShashk('w')) {
+				alert('Победа чёрных!');	
+			}
+		}
+	})
+});
+
+$('#Del_nigger_btn').click(function() {
+	for (l = 0; l < 64; l++) {
+		if ($('#' + l).attr('src') === 'black.png') {
+			$('#' + l).attr('src','without.png');
+		}
+	}
+	alert('Компьюте победил!');
+}
+);
+	
+	//$('#' + id).attr('src', $(this).attr('src'));
+						//$(this).attr('src', img);
+						//$('#' + id).animate({opacity : '1'});								//css('background', 'white');
+						//id = '';
+	
+	</script>
+</body>
+</html>
