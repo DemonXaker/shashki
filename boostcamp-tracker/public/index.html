@@ -553,6 +553,8 @@ document.addEventListener('click', e => {
     return;
   }
   const tog = e.target.closest('[data-toggle]');
+  // зона кнопок отеля и билета карточку не раскрывает — промах мимо кнопки ничего не делает
+  if (tog && e.target.closest('.c-hotel, .c-ticket')) return;
   if (tog && !e.target.closest('a')) {
     const id = tog.dataset.toggle;
     open.has(id) ? open.delete(id) : open.add(id);
