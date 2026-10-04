@@ -249,7 +249,7 @@ const STATUS = {
   excluded: { t: '✖ Не едет', cls: 's-excluded' },
 };
 const FILTERS = [
-  ['all', 'Все'], ['nobot', 'Не в боте'], ['work', 'В работе'], ['full', '100%'], ['decision', 'Требует решения'], ['unpaid', 'Доплата не оплачена'],
+  ['all', 'Все'], ['nobot', 'Не в боте'], ['work', 'В работе'], ['full', '100%'], ['decision', 'Требует решения'], ['unpaid', 'Доплата не оплачена'], ['turkey', 'Уже в Турции'], ['transfer', 'Нужен трансфер'],
   ['g3', 'Цель 3'], ['g2', 'Цель 2'], ['g1', 'Цель 1'], ['mine', 'Мои'],
 ];
 
@@ -368,7 +368,7 @@ function renderSummary() {
     return `<div class="goal-tile" style="--gc:${GOALS[g].c}"><div class="t">${GOALS[g].name} · ${x.total} чел.</div>
       <div class="n">в боте <b>${x.inBot}</b> · 100% <b>${x.full}</b></div></div>`;
   }).join('');
-  const cards = [['full', s.full || 0, 'с нами на 100%'], ['work', s.work || 0, 'в боте, в работе'], ['nobot', s.nobot || 0, 'не перешли в бот'], ['decision', s.decision || 0, 'требуют решения'], ['unpaid', s.unpaid || 0, 'доплата не оплачена']];
+  const cards = [['full', s.full || 0, 'с нами на 100%'], ['work', s.work || 0, 'в боте, в работе'], ['nobot', s.nobot || 0, 'не перешли в бот'], ['decision', s.decision || 0, 'требуют решения'], ['unpaid', s.unpaid || 0, 'доплата не оплачена'], ['turkey', s.inTurkey || 0, 'уже в Турции'], ['transfer', s.transferNeed || 0, 'нужен трансфер']];
   $('#stats').innerHTML = cards.map(([k, n, t]) => `<div class="stat ${filter === k ? 'on' : ''}" data-f="${k}"><b>${n}</b><span>${t}</span></div>`).join('');
 }
 
@@ -387,6 +387,8 @@ function matches(p) {
   const st = p.st;
   if (filter === 'mine') { const me = myName().toLowerCase(); if (!me || (p.m.owner || '').toLowerCase() !== me) return false; }
   else if (filter === 'unpaid') { if (!st.surchargeUnpaid || !st.counted) return false; }
+  else if (filter === 'turkey') { if (!st.inTurkey || !st.counted) return false; }
+  else if (filter === 'transfer') { if (!st.transferNeeded || !st.counted) return false; }
   else if (filter.startsWith('g')) { if (String(p.goal) !== filter.slice(1) || !st.counted) return false; }
   else if (filter !== 'all' && st.code !== filter) return false;
   if (query) {
@@ -434,11 +436,14 @@ function rowHtml(p) {
   const S_ = STATUS[st.code];
   const sub = (b.fio || b.tg ? esc(b.fio || '') + (b.tg ? (b.fio ? ' · ' : '') + '@' + esc(b.tg.replace(/^@/, '')) : '') : `<span class="muted">${p.inList ? (p.vip ? esc(p.vip) + ' · ' : '') + fmtNum(p.points) + ' баллов' : ''}</span>`)
     + (p.bot && !st.regDone ? ` <span style="color:var(--warn)">· ${esc(b.regStatus || 'регистрация не завершена')}</span>` : '');
-  const tags = (p.exception ? `<span class="tag t-info" title="${esc(p.exception)}">условия Цели 2</span>` : '')
+  const tags = (st.inTurkey ? '<span class="tag t-ok">🇹🇷 в Турции</span>' : '')
+    + (!st.transferNeeded ? '<span class="tag t-info">без трансфера</span>' : '')
+    + (p.exception ? `<span class="tag t-info" title="${esc(p.exception)}">условия Цели 2</span>` : '')
     + (/не\s*оплач/i.test(p.surcharge || '') ? '<span class="tag t-bad">доплата не оплачена</span>' : /оплач/i.test(p.surcharge || '') ? '<span class="tag t-ok">доплата ✅</span>' : '');
-  const ticketOpts = st.who === 'company'
+  const ticketOpts = (st.who === 'company'
     ? [['', 'не куплен'], ['bought', '✅ куплен', 'good']]
-    : [['', 'не спросили'], ['asked', 'спросили', 'mid'], ['bought', '✅ купил', 'good']];
+    : [['', 'не спросили'], ['asked', 'спросили', 'mid'], ['bought', '✅ купил', 'good']])
+    .concat([['notneeded', '🇹🇷 не нужен', 'good']]);
   const flight = st.arrFlight || st.depFlight ? `${esc(st.arrFlight || '—')} → ${esc(st.depFlight || '—')}` : '<span class="muted">рейс —</span>';
   return `<div class="row ${open.has(p.id) ? 'open' : ''} ${st.code === 'full' ? 'full' : ''}" data-id="${esc(p.id)}">
     <div class="row-main" data-toggle="${esc(p.id)}">
@@ -446,7 +451,7 @@ function rowHtml(p) {
       <div class="who"><b>${esc(p.nick)}</b>${tags}${b.account && b.account.toLowerCase() !== p.nick.toLowerCase() ? ` <span class="muted" style="font-size:12px">(бот: ${esc(b.account)})</span>` : ''}<div class="sub">${sub}</div></div>
       <div class="c-status"><span class="badge ${S_.cls}">${S_.t}</span>${st.code === 'full' || st.code === 'excluded' ? '' : `<div class="missing">${esc(st.missing.join(' · '))}</div>`}</div>
       <div class="c-hotel"><div class="lbl">Отель${st.housingPaid ? ' · <span style="color:var(--ok)">' + esc(b.housing) + '</span>' : ''}</div>${seg(p, 'hotel', [['', 'нет'], ['requested', 'запрос', 'mid'], ['confirmed', '✅ бронь', 'good']])}</div>
-      <div class="c-ticket"><div class="lbl">${st.byCar ? 'Едет на машине' : 'Билет · ' + (st.who === 'company' ? 'покупаем мы' + (st.passportOk ? ' · паспорт ✅' : ' · паспорта нет') : 'покупает сам')}</div>${seg(p, 'ticket', ticketOpts)}</div>
+      <div class="c-ticket"><div class="lbl">${st.inTurkey ? 'Уже в Турции · билет не нужен' : st.byCar ? 'Едет на машине' : 'Билет · ' + (st.who === 'company' ? 'покупаем мы' + (st.passportOk ? ' · паспорт ✅' : ' · паспорта нет') : 'покупает сам')}</div>${seg(p, 'ticket', ticketOpts)}</div>
       <div class="c-flight"><div class="lbl">Рейс</div><div class="flight">${flight}</div><div class="owner">${m.owner ? '👤 ' + esc(m.owner) : ''}</div></div>
       <div class="chev">›</div>
     </div>
@@ -476,6 +481,7 @@ function detailsHtml(p) {
   h += input(p, 'sponsor', 'Спонсор', '', 'кому писать, если молчит');
   h += input(p, 'phone', 'Телефон', '', '+7…');
   if (!b) h += `<div class="field"><div class="lbl">В боте (вручную)</div>${seg(p, 'inBotManual', [['', 'нет'], ['yes', 'да, перешёл', 'good']])}</div>`;
+  h += `<div class="field"><div class="lbl">Трансфер${b && b.transferStatus ? ' · в боте: ' + esc(b.transferStatus) : ''}</div>${seg(p, 'transfer', [['', 'нужен'], ['no', 'не нужен', 'good']])}</div>`;
   h += `<div class="field"><div class="lbl">Участие</div>${seg(p, 'notGoing', [['', 'едет', 'good'], ['yes', '✖ не едет']])}</div>`;
   h += input(p, 'comment', 'Комментарий / следующий шаг', 'full', 'что обещал, когда перезвонить…');
   h += '</div>';
@@ -617,7 +623,7 @@ $('#fileInput').addEventListener('change', async e => {
 
 // ---------- Google Таблица ----------
 const SHEET_CHOICES_ALL = {
-  '✎ Отель': ['запрошена', '✅ подтверждена'], '✎ Билет покупает': ['мы', 'сам'], '✎ Билет': ['спросили', '✅ куплен'],
+  '✎ Отель': ['запрошена', '✅ подтверждена'], '✎ Билет покупает': ['мы', 'сам'], '✎ Билет': ['спросили', '✅ куплен', 'не нужен — уже в Турции'],
   '✎ Рейс туда': null, '✎ Дата прилёта': null, '✎ Рейс обратно': null, '✎ Ответственный': null, '✎ Спонсор': null,
   '✎ Телефон': null, '✎ Комментарий': null, '✎ Решение': ['участвует', 'не участвует'],
 };

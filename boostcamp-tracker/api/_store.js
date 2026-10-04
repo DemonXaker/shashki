@@ -410,7 +410,7 @@ export const fieldByColumn = col => COL_FIELD[String(col || '').trim()];
 const TO_SHEET = {
   hotel: { requested: 'запрошена', confirmed: '✅ подтверждена' },
   ticketWho: { company: 'мы', self: 'сам' },
-  ticket: { asked: 'спросили', bought: '✅ куплен' },
+  ticket: { asked: 'спросили', bought: '✅ куплен', notneeded: 'не нужен — уже в Турции' },
   decision: { yes: 'участвует', no: 'не участвует' },
 };
 export const SHEET_CHOICES = Object.fromEntries(Object.entries(TO_SHEET).map(([f, v]) => [SHEET_COLS[f], Object.values(v)]));
@@ -427,7 +427,7 @@ export function fromSheet(field, text) {
   if (!TO_SHEET[field]) return t.slice(0, 500);
   if (!l || /^(нет|-|—|не решено)$/.test(l)) return '';
   if (field === 'hotel') return /^не/.test(l) ? '' : /подтв|✅|брон|оплач|^да/.test(l) ? 'confirmed' : /запро/.test(l) ? 'requested' : undefined;
-  if (field === 'ticket') return /^не/.test(l) ? '' : /спрос/.test(l) ? 'asked' : /куп|✅|^да/.test(l) ? 'bought' : undefined;
+  if (field === 'ticket') return /не\s*нуж|турци/.test(l) ? 'notneeded' : /^не/.test(l) ? '' : /спрос/.test(l) ? 'asked' : /куп|✅|^да/.test(l) ? 'bought' : undefined;
   if (field === 'ticketWho') return /^мы|компан/.test(l) ? 'company' : /сам/.test(l) ? 'self' : undefined;
   if (field === 'decision') return /^не/.test(l) ? 'no' : /участ|^да/.test(l) ? 'yes' : undefined;
 }
@@ -599,7 +599,8 @@ export function applyRoster(state, rows, { by = 'кто-то', version = '', sou
 export const MANUAL_FIELDS = {
   hotel: { label: 'Отель', values: { '': 'нет брони', requested: 'запрошена', confirmed: 'подтверждена' } },
   ticketWho: { label: 'Кто покупает билет', values: { '': 'по умолчанию', company: 'мы', self: 'сам' } },
-  ticket: { label: 'Билет', values: { '': 'не куплен', asked: 'спросили', bought: 'куплен' } },
+  ticket: { label: 'Билет', values: { '': 'не куплен', asked: 'спросили', bought: 'куплен', notneeded: 'не нужен (уже в Турции)' } },
+  transfer: { label: 'Трансфер', values: { '': 'нужен', no: 'не нужен' } },
   arrFlight: { label: 'Рейс туда' },
   depFlight: { label: 'Рейс обратно' },
   arrDate: { label: 'Дата прилёта' },
@@ -633,7 +634,9 @@ export function computeStatus(p) {
   const depFlight = m.depFlight || b.depFlight || '';
   const housingPaid = /оплачен|подтвержд|заброн/i.test(b.housing || '');
   const hotelOk = m.hotel === 'confirmed' || housingPaid;
-  const ticketOk = m.ticket === 'bought' || byCar || (who === 'self' && !!arrFlight);
+  const inTurkey = m.ticket === 'notneeded';
+  const ticketOk = m.ticket === 'bought' || inTurkey || byCar || (who === 'self' && !!arrFlight);
+  const transferNeeded = m.transfer !== 'no';
   const missing = [];
   if (!inBot) missing.push('не перешёл в бот');
   else if (!regDone) missing.push(`дожать регистрацию в боте (${b.regStatus || 'не завершена'})`);
@@ -649,11 +652,11 @@ export function computeStatus(p) {
   else if (!inBot) code = 'nobot';
   else if (regDone && hotelOk && ticketOk && !surchargeUnpaid) code = 'full';
   else code = 'work';
-  return { code, counted: counted && !excluded, inBot, regDone, who, cond, surchargeUnpaid, byCar, passportOk, housingPaid, arrFlight, depFlight, hotelOk, ticketOk, missing };
+  return { code, counted: counted && !excluded, inBot, regDone, who, cond, surchargeUnpaid, inTurkey, transferNeeded, byCar, passportOk, housingPaid, arrFlight, depFlight, hotelOk, ticketOk, missing };
 }
 
 export function summary(state) {
-  const s = { target: GOAL_TARGET, counted: 0, full: 0, work: 0, nobot: 0, decision: 0, inBot: 0, unpaid: 0, byGoal: {} };
+  const s = { target: GOAL_TARGET, counted: 0, full: 0, work: 0, nobot: 0, decision: 0, inBot: 0, unpaid: 0, inTurkey: 0, transferNeed: 0, byGoal: {} };
   for (const p of state.people) {
     const st = computeStatus(p);
     if (st.code === 'decision') s.decision++;
@@ -661,6 +664,8 @@ export function summary(state) {
     s.counted++;
     if (st.inBot) s.inBot++;
     if (st.surchargeUnpaid) s.unpaid++;
+    if (st.inTurkey) s.inTurkey++;
+    if (st.transferNeeded) s.transferNeed++;
     s[st.code] = (s[st.code] || 0) + 1;
     const g = (s.byGoal[p.goal] = s.byGoal[p.goal] || { total: 0, full: 0, inBot: 0 });
     g.total++; if (st.inBot) g.inBot++; if (st.code === 'full') g.full++;

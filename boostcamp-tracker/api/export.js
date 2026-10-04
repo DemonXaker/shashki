@@ -7,11 +7,11 @@ import { loadState, pullSheet, computeStatus, summary, json, sameSecret } from '
 const GOAL = g => (g ? `Цель ${g}` : 'без цели');
 const STATUS = { full: '✅ С нами 100%', work: '🟠 В работе', nobot: '⚪ Не в боте', decision: '❓ Требует решения', excluded: '✖ Не едет' };
 const HOTEL = { '': '—', requested: 'запрошена', confirmed: '✅ подтверждена' };
-const TICKET = { '': '—', asked: 'спросили', bought: '✅ куплен' };
+const TICKET = { '': '—', asked: 'спросили', bought: '✅ куплен', notneeded: '🇹🇷 не нужен (в Турции)' };
 
 export function toRows(state) {
   const headers = ['№', 'Ник Pulse', 'Цель', 'Баллы', 'Статус', 'Исключение', 'Доплата', 'Чего не хватает', 'В боте', 'ФИО', 'Telegram', 'Телефон',
-    'Регистрация в боте (статус)', 'Паспорт / билет (таблица)', 'Проживание (таблица)', 'Отель', 'Билет покупает', 'Билет', 'Рейс туда', 'Дата прилёта', 'Рейс обратно', 'Ответственный', 'Спонсор', 'Комментарий',
+    'Регистрация в боте (статус)', 'Паспорт / билет (таблица)', 'Проживание (таблица)', 'Отель', 'Билет покупает', 'Билет', 'Рейс туда', 'Дата прилёта', 'Рейс обратно', 'Трансфер', 'Ответственный', 'Спонсор', 'Комментарий',
     'Регистрация в боте', 'Другие аккаунты', 'Примечание'];
   const order = { 3: 0, 2: 1, 1: 2, 0: 3 };
   const people = [...state.people].sort((a, b) =>
@@ -22,7 +22,8 @@ export function toRows(state) {
       st.inBot ? '✅' : '—', b.fio || '', b.tg ? '@' + b.tg.replace(/^@/, '') : '', m.phone || '',
       b.regStatus || '', b.passport || '', b.housing || '',
       st.housingPaid && !m.hotel ? '✅ оплачено (таблица)' : HOTEL[m.hotel || ''], st.byCar ? 'едет на машине' : (st.who === 'company' ? 'мы' : 'сам'), TICKET[m.ticket || ''] + (st.who === 'self' && !m.ticket && st.arrFlight ? ' (рейс указан)' : ''),
-      st.arrFlight, m.arrDate || b.arrDate || '', st.depFlight, m.owner || '', m.sponsor || '', m.comment || '',
+      st.arrFlight, m.arrDate || b.arrDate || '', st.depFlight,
+      st.transferNeeded ? 'нужен' + (b.transferStatus ? ` (${b.transferStatus})` : '') : 'не нужен', m.owner || '', m.sponsor || '', m.comment || '',
       b.regAt || '', (p.alts || []).join(', '), p.inList ? (p.pdfNote || '') : (p.decisionReason || '')];
   });
   return { headers, rows };
