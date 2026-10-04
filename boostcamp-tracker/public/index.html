@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>BoostCamp трекер</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#121212; --bg-2:#1a1a1e; --bg-3:#222228; --ink:#f0f0f5; --ink-2:#c8c8d4; --ink-3:#8a8a9c;
+    --accent:#ff4d00; --accent-bright:#ff6b1a; --line:#ffffff1f; --line-2:#ffffff33;
+    --ok:#00c853; --ok-bg:#00c85322; --warn:#ffb020; --warn-bg:#ffb02022; --bad:#ff5252; --bad-bg:#ff525222;
+    --info:#60a5fa; --info-bg:#60a5fa22; --g3:#d4a017; --g2:#60a5fa; --g1:#4caf50;
+    --sans:"Manrope",-apple-system,"Segoe UI",sans-serif; --mono:"DM Mono","SF Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; margin:0 }
+  body { background:radial-gradient(circle at 85% -10%, #ff4d0014, transparent 30%), var(--bg); color:var(--ink);
+         font:500 14px/1.45 var(--sans); min-height:100vh; }
+  button, input, select, textarea { font:inherit; color:inherit }
+  a { color:var(--accent-bright) }
+  .wrap { max-width:1440px; margin:0 auto; padding:20px 16px 60px }
+  header.top { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:18px }
+  .kicker { font:500 11px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3) }
+  h1 { font-size:24px; font-weight:800; letter-spacing:-.01em }
+  h1 b { color:var(--accent) }
+  .live { display:inline-flex; align-items:center; gap:6px; font:500 12px var(--mono); color:var(--ink-3) }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 3px #00c85333 }
+  .dot.stale { background:var(--warn); box-shadow:0 0 0 3px #ffb02033 }
+  .dot.err { background:var(--bad); box-shadow:0 0 0 3px #ff525233 }
+  .actions { display:flex; flex-wrap:wrap; gap:8px }
+  .btn { border:1px solid var(--line-2); background:var(--bg-2); border-radius:10px; padding:8px 12px; cursor:pointer;
+         font-weight:600; font-size:13px; transition:border-color .15s, background .15s }
+  .btn:hover { border-color:var(--accent) }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#121212 }
+  .btn.primary:hover { background:var(--accent-bright) }
+
+  .card { background:var(--bg-2); border:1px dashed var(--line); border-radius:18px; padding:16px }
+  .hero { display:grid; grid-template-columns: 1.3fr 1fr; gap:14px; margin-bottom:14px }
+  .progress-num { font-size:40px; font-weight:800; letter-spacing:-.02em; line-height:1 }
+  .progress-num small { font-size:18px; color:var(--ink-3); font-weight:700 }
+  .bar { position:relative; height:14px; background:var(--bg-3); border-radius:8px; overflow:hidden; margin:12px 0 8px }
+  .bar i { position:absolute; inset:0 auto 0 0; border-radius:8px }
+  .bar .b-bot { background:#ff4d0055 }
+  .bar .b-full { background:var(--accent) }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; font-size:12px; color:var(--ink-2) }
+  .legend span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:-1px; background:var(--c) }
+  .stats { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px }
+  .stat { background:var(--bg-3); border-radius:12px; padding:10px; cursor:pointer; border:1px solid transparent }
+  .stat:hover, .stat.on { border-color:var(--accent) }
+  .stat b { display:block; font-size:24px; font-weight:800 }
+  .stat span { font-size:12px; color:var(--ink-3) }
+  .goals { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px }
+  .goal-tile { background:var(--bg-3); border-radius:12px; padding:10px; border-left:3px solid var(--gc) }
+  .goal-tile .t { font:500 11px var(--mono); text-transform:uppercase; letter-spacing:.06em; color:var(--gc) }
+  .goal-tile .n { font-size:13px; color:var(--ink-2); margin-top:4px }
+  .goal-tile .n b { color:var(--ink); font-size:16px }
+
+  .layout { display:grid; grid-template-columns: minmax(0,1fr) 340px; gap:14px; align-items:start }
+  .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px }
+  .chip { border:1px solid var(--line-2); background:transparent; border-radius:999px; padding:6px 11px; cursor:pointer; font-size:12.5px; font-weight:600; color:var(--ink-2) }
+  .chip.on { background:var(--accent); border-color:var(--accent); color:#121212 }
+  .search { flex:1; min-width:180px; background:var(--bg-2); border:1px solid var(--line-2); border-radius:10px; padding:8px 12px }
+  .search:focus, input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent) }
+
+  .group { margin-bottom:18px }
+  .group-h { display:flex; align-items:center; gap:10px; padding:10px 14px; border:2px dashed var(--gc); border-radius:14px;
+             background:color-mix(in srgb, var(--gc) 10%, transparent); margin-bottom:8px }
+  .group-h b { color:var(--gc); font-size:15px; font-weight:800; letter-spacing:.02em }
+  .group-h span { color:var(--ink-2); font-size:12.5px }
+  .group-h .cnt { margin-left:auto; font:500 12px var(--mono); color:var(--ink-2); white-space:nowrap }
+
+  .row { background:var(--bg-2); border:1px solid var(--line); border-radius:14px; margin-bottom:6px; transition:border-color .2s, box-shadow .4s }
+  .row.full { border-color:#00c85355 }
+  .row.flash { box-shadow:0 0 0 2px var(--accent) }
+  .row-main { display:grid; grid-template-columns: 30px minmax(140px,1.2fr) minmax(170px,1.3fr) 196px 200px 110px 20px; gap:10px; align-items:center; padding:10px 12px; cursor:pointer }
+  .num { font:500 12px var(--mono); color:var(--ink-3) }
+  .who b { font-weight:800 }
+  .who .sub { font-size:12px; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .badge { display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap }
+  .s-full { background:var(--ok-bg); color:var(--ok) } .s-work { background:var(--warn-bg); color:var(--warn) }
+  .s-nobot { background:#ffffff14; color:var(--ink-2) } .s-decision { background:var(--info-bg); color:var(--info) }
+  .s-excluded { background:#ffffff0d; color:var(--ink-3); text-decoration:line-through }
+  .missing { font-size:12px; color:var(--ink-3); margin-top:3px }
+  .seg { display:inline-flex; border:1px solid var(--line-2); border-radius:9px; overflow:hidden }
+  .seg button { border:0; background:transparent; padding:5px 7px; font-size:12px; font-weight:600; color:var(--ink-3); cursor:pointer; white-space:nowrap }
+  .seg button + button { border-left:1px solid var(--line) }
+  .seg button.on { background:var(--bg-3); color:var(--ink) }
+  .seg button.on.good { background:var(--ok-bg); color:var(--ok) }
+  .seg button.on.mid { background:var(--warn-bg); color:var(--warn) }
+  .lbl { font:500 10.5px var(--mono); letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); margin-bottom:3px }
+  .flight { font:500 12.5px var(--mono); color:var(--ink-2) }
+  .owner { font-size:12.5px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .chev { color:var(--ink-3); transition:transform .2s; text-align:center }
+  .row.open .chev { transform:rotate(90deg) }
+
+  .details { display:none; border-top:1px dashed var(--line); padding:14px 12px 14px 58px }
+  .row.open .details { display:block }
+  .dgrid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px }
+  .field input, .field select, .field textarea { width:100%; background:var(--bg); border:1px solid var(--line-2); border-radius:9px; padding:7px 10px; font-size:13px }
+  .field textarea { min-height:60px; resize:vertical }
+  .field.wide { grid-column: span 2 } .field.full { grid-column: 1 / -1 }
+  .botinfo { font-size:12.5px; color:var(--ink-2); line-height:1.6 }
+  .botinfo b { color:var(--ink) }
+  .meta { font:500 11px var(--mono); color:var(--ink-3); margin-top:4px }
+  .reason { background:var(--info-bg); color:var(--info); border-radius:10px; padding:8px 10px; font-size:12.5px; margin-bottom:12px }
+
+  .feed { position:sticky; top:14px; max-height:calc(100vh - 28px); display:flex; flex-direction:column }
+  .feed h3 { font-size:15px; font-weight:800; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center }
+  .feed-list { overflow:auto; display:flex; flex-direction:column; gap:6px; padding-right:4px }
+  .ev { background:var(--bg-3); border-radius:10px; padding:8px 10px; font-size:12.5px; border-left:3px solid transparent; cursor:pointer }
+  .ev.reg { border-left-color:var(--accent) } .ev.full { border-left-color:var(--ok) } .ev.bot-upd { border-left-color:var(--info) }
+  .ev.new { background:#ff4d0018 }
+  .ev .t { font:500 10.5px var(--mono); color:var(--ink-3); margin-top:3px }
+
+  .toast-box { position:fixed; right:16px; bottom:16px; display:flex; flex-direction:column; gap:8px; z-index:50; max-width:min(380px, calc(100vw - 32px)) }
+  .toast { background:var(--bg-3); border:1px solid var(--accent); border-radius:12px; padding:10px 14px; font-size:13px; box-shadow:0 8px 30px #0008; animation:in .25s }
+  .toast.err { border-color:var(--bad) }
+  @keyframes in { from { transform:translateY(10px); opacity:0 } }
+
+  dialog { background:var(--bg-2); color:var(--ink); border:1px dashed var(--line-2); border-radius:18px; padding:20px; width:min(760px, calc(100vw - 32px)); max-height:calc(100vh - 40px) }
+  dialog::backdrop { background:#000a }
+  dialog h2 { font-size:18px; margin-bottom:10px } dialog h3 { font-size:14px; margin:16px 0 6px }
+  dialog p, dialog li { font-size:13px; color:var(--ink-2); margin-bottom:6px }
+  dialog ol { padding-left:20px }
+  pre.code { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px; font:12px/1.5 var(--mono); max-height:260px; overflow:auto; white-space:pre-wrap; word-break:break-all; color:var(--ink-2) }
+  .empty { padding:30px; text-align:center; color:var(--ink-3) }
+  .muted { color:var(--ink-3) }
+
+  @media (max-width: 1180px) {
+    .layout { grid-template-columns:1fr }
+    .feed { position:static; max-height:420px }
+    .row-main { grid-template-columns: 30px minmax(0,1fr) minmax(0,1fr) 28px }
+    .row-main .c-hotel, .row-main .c-ticket, .row-main .c-flight { grid-column: 2 / -1 }
+    .row-main .c-flight { display:none }
+    .dgrid { grid-template-columns:repeat(2, minmax(0,1fr)) }
+  }
+  @media (max-width: 760px) {
+    .hero { grid-template-columns:1fr }
+    .stats { grid-template-columns:repeat(2, 1fr) }
+    .row-main { grid-template-columns: 26px minmax(0,1fr) 22px }
+    .row-main .c-status, .row-main .c-hotel, .row-main .c-ticket { grid-column: 2 / -1 }
+    .row-main .chev { grid-row:1; grid-column:3 }
+    .details { padding:12px }
+    .dgrid { grid-template-columns:1fr }
+    .field.wide { grid-column:auto }
+    .goals { grid-template-columns:1fr }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="kicker">Pulse Platform · BoostCamp 2026</div>
+      <h1>Трекер <b>участников</b></h1>
+      <div class="live"><i class="dot" id="dot"></i><span id="liveText">загрузка…</span></div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="btnName" title="Имя для ленты событий"></button>
+      <button class="btn" id="btnPull" title="Забрать свежие строки из таблицы «Участники» прямо сейчас">⟳ Синхр. с таблицей</button>
+      <button class="btn" id="btnImport">⤒ Загрузить выгрузку бота</button>
+      <button class="btn" id="btnSheets">Google Таблица и бот</button>
+      <a class="btn" href="/__logout" style="text-decoration:none;color:var(--ink-2)">Выйти</a>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="card">
+      <div class="kicker">Цель — 50 человек с нами на 100%</div>
+      <div style="display:flex; align-items:baseline; gap:14px; margin-top:8px; flex-wrap:wrap">
+        <div class="progress-num" id="pFull">0 <small>/ 50</small></div>
+        <div class="muted" id="pNote"></div>
+      </div>
+      <div class="bar"><i class="b-bot" id="barBot"></i><i class="b-full" id="barFull"></i></div>
+      <div class="legend">
+        <span style="--c:var(--accent)">с нами на 100% — отель и билет готовы</span>
+        <span style="--c:#ff4d0055">перешли в бот</span>
+      </div>
+      <div class="goals" id="goals"></div>
+    </div>
+    <div class="card">
+      <div class="kicker" style="margin-bottom:8px">Статусы · нажмите, чтобы отфильтровать</div>
+      <div class="stats" id="stats"></div>
+    </div>
+  </section>
+
+  <div class="layout">
+    <main>
+      <div class="toolbar">
+        <div id="chips" style="display:flex; flex-wrap:wrap; gap:6px"></div>
+        <input class="search" id="search" placeholder="Поиск: ник, ФИО, telegram, ответственный…">
+      </div>
+      <div id="list"><div class="empty">Загрузка…</div></div>
+    </main>
+    <aside class="card feed">
+      <h3>Лента событий <span class="muted" style="font-size:12px;font-weight:500" id="feedCount"></span></h3>
+      <div class="feed-list" id="feed"></div>
+    </aside>
+  </div>
+</div>
+
+<div class="toast-box" id="toasts"></div>
+
+<dialog id="dlgSheets">
+  <h2>Google Таблица и бот</h2>
+  <p><b>Откуда берутся заявки:</b> таблица «Участники» (бот + колонки «Паспорт», «Проживание») — трекер забирает её сам раз в минуту, пока открыт хотя бы у одного человека. Новые строки и правки в ней сразу появляются в ленте. <span id="sheetLink"></span></p>
+  <p><b>Где отмечать:</b> отель, кто покупает билет, куплен ли, рейсы, ответственный, спонсор — здесь, в трекере. Ниже — как получить живую копию всего трекера обратно в Google Таблицу.</p>
+  <h3>1. Живая копия в Google Таблице (один раз, ~3 минуты)</h3>
+  <ol>
+    <li>Откройте таблицу «BoostCamp 2026 — участники и цели» → <b>Расширения → Apps Script</b>.</li>
+    <li>Удалите всё в редакторе, вставьте код ниже (кнопка «Скопировать»), нажмите 💾.</li>
+    <li>Выберите функцию <b>setup</b> → <b>Выполнить</b> → разрешите доступ. Появится лист «Трекер (live)» и обновление каждую минуту.</li>
+  </ol>
+  <pre class="code" id="gasCode"></pre>
+  <div style="display:flex; gap:8px; margin-top:8px"><button class="btn primary" id="copyGas">Скопировать код</button></div>
+  <h3>Без скрипта (обновляется ~раз в час)</h3>
+  <pre class="code" id="importFormula"></pre>
+  <h3>2. Заявки из бота в реальном времени</h3>
+  <p id="hookInfo"></p>
+  <pre class="code" id="hookExample"></pre>
+  <p>Пока вебхук не подключён — загружайте свежую выгрузку бота кнопкой «Загрузить выгрузку бота»: новые заявки появятся в ленте, ничего не задублируется.</p>
+  <div style="text-align:right; margin-top:12px"><button class="btn" onclick="this.closest('dialog').close()">Закрыть</button></div>
+</dialog>
+
+<script>
+const GOALS = {
+  3: { name: 'ЦЕЛЬ 3', thr: 'от 250,000 баллов', cover: 'программа 100% · перелёт за счёт компании · подарок', c: 'var(--g3)' },
+  2: { name: 'ЦЕЛЬ 2', thr: 'от 100,000 баллов', cover: 'программа 100% · перелёт сам', c: 'var(--g2)' },
+  1: { name: 'ЦЕЛЬ 1', thr: 'от 50,000 баллов', cover: 'программа 50% · перелёт сам', c: 'var(--g1)' },
+};
+const STATUS = {
+  full: { t: '✅ С нами 100%', cls: 's-full' }, work: { t: '🟠 В работе', cls: 's-work' },
+  nobot: { t: '⚪ Не в боте', cls: 's-nobot' }, decision: { t: '❓ Требует решения', cls: 's-decision' },
+  excluded: { t: 'Не участвует', cls: 's-excluded' },
+};
+const FILTERS = [
+  ['all', 'Все'], ['nobot', 'Не в боте'], ['work', 'В работе'], ['full', '100%'], ['decision', 'Требует решения'],
+  ['g3', 'Цель 3'], ['g2', 'Цель 2'], ['g1', 'Цель 1'], ['mine', 'Мои'],
+];
+
+let S = null;              // последнее состояние с сервера
+let filter = 'all';
+let query = '';
+const open = new Set();
+let lastOk = 0, failing = false;
+let seenEvents = null;     // id событий, уже показанных (для тостов)
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const fmtNum = n => n == null ? '' : Number(n).toLocaleString('ru-RU');
+const fmtTime = iso => { if (!iso) return ''; const d = new Date(iso); return d.toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }); };
+const ago = iso => { const s = Math.round((Date.now() - new Date(iso)) / 1000); if (s < 60) return 'только что'; if (s < 3600) return Math.floor(s/60) + ' мин назад'; if (s < 86400) return Math.floor(s/3600) + ' ч назад'; return fmtTime(iso); };
+
+function myName() { try { return localStorage.getItem('bc_name') || ''; } catch { return ''; } }
+function askName(force) {
+  let n = myName();
+  if (!n || force) {
+    n = (prompt('Как вас подписывать в ленте событий? (имя)', n) || n || '').trim();
+    if (n) try { localStorage.setItem('bc_name', n); } catch {}
+  }
+  $('#btnName').textContent = '👤 ' + (n || 'представьтесь');
+  return n;
+}
+
+function toast(text, err) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (err ? ' err' : '');
+  el.textContent = text;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), err ? 7000 : 6000);
+}
+
+// ---------- загрузка ----------
+async function load(force) {
+  try {
+    const url = '/api/state' + (S && !force ? '?since=' + encodeURIComponent(S.updatedAt) : '');
+    const r = await fetch(url, { cache: 'no-store' });
+    if (r.status === 401) { location.reload(); return; }
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.status);
+    lastOk = Date.now(); failing = false;
+    if (data.same) { if (S) S.sheetError = data.sheetError; return liveTick(); }
+    const firstLoad = !S;
+    S = data;
+    notifyNew(firstLoad);
+    render();
+  } catch (e) {
+    failing = true;
+    liveTick();
+  }
+}
+
+function notifyNew(firstLoad) {
+  const key = e => e.at + '|' + e.text;
+  if (firstLoad || !seenEvents) { seenEvents = new Set(S.events.map(key)); return; }
+  const fresh = S.events.filter(e => !seenEvents.has(key(e)));
+  fresh.forEach(e => seenEvents.add(key(e)));
+  const me = myName();
+  for (const e of fresh.reverse()) {
+    if (e.kind === 'reg' || e.kind === 'full' || e.kind === 'bot-upd' || (e.by !== me && e.kind === 'edit')) {
+      toast((e.by && e.kind === 'edit' ? e.by + ': ' : '') + e.text);
+      flash(e.id);
+    }
+  }
+  if (fresh.some(e => e.kind === 'reg')) { try { document.title = '🆕 BoostCamp трекер'; } catch {} }
+}
+
+function flash(id) {
+  setTimeout(() => {
+    const el = document.querySelector(`.row[data-id="${CSS.escape(id || '')}"]`);
+    if (el) { el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 2500); }
+  }, 50);
+}
+
+function liveTick() {
+  const dot = $('#dot');
+  const t = $('#liveText');
+  if (!lastOk) { t.textContent = failing ? 'нет связи с сервером' : 'загрузка…'; dot.className = 'dot' + (failing ? ' err' : ''); return; }
+  const s = Math.round((Date.now() - lastOk) / 1000);
+  dot.className = 'dot' + (failing ? (s > 60 ? ' err' : ' stale') : '');
+  t.textContent = (failing ? 'нет связи · ' : 'онлайн · ') + 'проверено ' + (s < 5 ? 'только что' : s + ' с назад') +
+    (S && S.updatedAt ? ' · последнее изменение ' + ago(S.updatedAt) : '') +
+    (S && S.sheetError ? ' · ⚠ таблица: ' + S.sheetError : (S && S.sheetPulledAt ? ' · таблица «Участники» подключена' : ''));
+}
+
+// ---------- отрисовка ----------
+function render() {
+  if (!S) return;
+  renderSummary();
+  renderChips();
+  renderFeed();
+  // не перерисовываем список, пока человек что-то печатает в поле
+  const a = document.activeElement;
+  if (a && a.closest && a.closest('#list') && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) { pendingList = true; return; }
+  renderList();
+  liveTick();
+}
+let pendingList = false;
+document.addEventListener('focusout', () => setTimeout(() => {
+  if (pendingList && !(document.activeElement && document.activeElement.closest && document.activeElement.closest('#list') && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) {
+    pendingList = false; renderList();
+  }
+}, 0));
+
+function renderSummary() {
+  const s = S.summary;
+  $('#pFull').innerHTML = `${s.full || 0} <small>/ ${s.target}</small>`;
+  $('#pNote').textContent = `в боте ${s.inBot} из ${s.counted} · квалифицированы ${s.counted}`;
+  $('#barFull').style.width = Math.min(100, (s.full || 0) / s.target * 100) + '%';
+  $('#barBot').style.width = Math.min(100, s.inBot / s.target * 100) + '%';
+  $('#goals').innerHTML = [3, 2, 1].map(g => {
+    const x = s.byGoal[g] || { total: 0, inBot: 0, full: 0 };
+    return `<div class="goal-tile" style="--gc:${GOALS[g].c}"><div class="t">${GOALS[g].name} · ${x.total} чел.</div>
+      <div class="n">в боте <b>${x.inBot}</b> · 100% <b>${x.full}</b></div></div>`;
+  }).join('');
+  const cards = [['full', s.full || 0, 'с нами на 100%'], ['work', s.work || 0, 'в боте, в работе'], ['nobot', s.nobot || 0, 'не перешли в бот'], ['decision', s.decision || 0, 'требуют решения']];
+  $('#stats').innerHTML = cards.map(([k, n, t]) => `<div class="stat ${filter === k ? 'on' : ''}" data-f="${k}"><b>${n}</b><span>${t}</span></div>`).join('');
+}
+
+function renderChips() {
+  $('#chips').innerHTML = FILTERS.map(([k, t]) => `<button class="chip ${filter === k ? 'on' : ''}" data-f="${k}">${t}</button>`).join('');
+}
+
+function renderFeed() {
+  const ev = S.events.slice(0, 120);
+  $('#feedCount').textContent = ev.length ? `последние ${ev.length}` : '';
+  $('#feed').innerHTML = ev.map(e => `<div class="ev ${esc(e.kind || '')} ${Date.now() - new Date(e.at) < 3600e3 && e.kind === 'reg' ? 'new' : ''}" data-id="${esc(e.id || '')}">
+      ${esc(e.text)}<div class="t">${fmtTime(e.at)}${e.by ? ' · ' + esc(e.by) : ''}</div></div>`).join('') || '<div class="muted">Пока пусто</div>';
+}
+
+function matches(p) {
+  const st = p.st;
+  if (filter === 'mine') { const me = myName().toLowerCase(); if (!me || (p.m.owner || '').toLowerCase() !== me) return false; }
+  else if (filter.startsWith('g')) { if (String(p.goal) !== filter.slice(1) || !st.counted) return false; }
+  else if (filter !== 'all' && st.code !== filter) return false;
+  if (query) {
+    const b = p.bot || {};
+    const hay = [p.nick, b.fio, b.tg, b.email, b.account, p.m.owner, p.m.sponsor, p.m.comment, (p.alts || []).join(' ')].join(' ').toLowerCase();
+    if (!hay.includes(query)) return false;
+  }
+  return true;
+}
+
+function renderList() {
+  const people = S.people.filter(matches);
+  if (!people.length) { $('#list').innerHTML = '<div class="empty">Никого под этот фильтр</div>'; return; }
+  const groups = [3, 2, 1].map(g => ({ g, items: people.filter(p => p.inList && p.goal === g).sort((a, b) => a.num - b.num) }));
+  const extra = people.filter(p => !p.inList);
+  let html = '';
+  for (const { g, items } of groups) {
+    if (!items.length) continue;
+    const all = S.people.filter(p => p.inList && p.goal === g);
+    const full = all.filter(p => p.st.code === 'full').length, inBot = all.filter(p => p.st.inBot).length;
+    html += `<section class="group" style="--gc:${GOALS[g].c}"><div class="group-h"><b>${GOALS[g].name}</b><span>${GOALS[g].thr} · ${GOALS[g].cover}</span>
+      <span class="cnt">${all.length} чел. · в боте ${inBot} · 100% ${full}</span></div>${items.map(rowHtml).join('')}</section>`;
+  }
+  if (extra.length) {
+    html += `<section class="group" style="--gc:var(--info)"><div class="group-h"><b>ВНЕ СПИСКА 28.09</b><span>заявки из бота, которых нет среди квалифицированных или которые пришли со второго аккаунта</span>
+      <span class="cnt">${extra.length}</span></div>${extra.map(rowHtml).join('')}</section>`;
+  }
+  $('#list').innerHTML = html;
+}
+
+function seg(p, field, opts) {
+  const cur = p.m[field] || '';
+  return `<div class="seg" data-id="${esc(p.id)}" data-field="${field}">` + opts.map(([v, t, cls]) =>
+    `<button type="button" data-v="${v}" class="${cur === v ? 'on ' + (cls || '') : ''}">${t}</button>`).join('') + '</div>';
+}
+
+function rowHtml(p) {
+  const st = p.st, b = p.bot || {}, m = p.m || {};
+  const S_ = STATUS[st.code];
+  const sub = (b.fio || b.tg ? esc(b.fio || '') + (b.tg ? (b.fio ? ' · ' : '') + '@' + esc(b.tg.replace(/^@/, '')) : '') : `<span class="muted">${p.inList ? (p.vip ? esc(p.vip) + ' · ' : '') + fmtNum(p.points) + ' баллов' : ''}</span>`)
+    + (p.bot && !st.regDone ? ` <span style="color:var(--warn)">· ${esc(b.regStatus || 'регистрация не завершена')}</span>` : '');
+  const ticketOpts = st.who === 'company'
+    ? [['', 'не куплен'], ['bought', '✅ куплен', 'good']]
+    : [['', 'не спросили'], ['asked', 'спросили', 'mid'], ['bought', '✅ купил', 'good']];
+  const flight = st.arrFlight || st.depFlight ? `${esc(st.arrFlight || '—')} → ${esc(st.depFlight || '—')}` : '<span class="muted">рейс —</span>';
+  return `<div class="row ${open.has(p.id) ? 'open' : ''} ${st.code === 'full' ? 'full' : ''}" data-id="${esc(p.id)}">
+    <div class="row-main" data-toggle="${esc(p.id)}">
+      <div class="num">${p.num || '•'}</div>
+      <div class="who"><b>${esc(p.nick)}</b>${b.account && b.account.toLowerCase() !== p.nick.toLowerCase() ? ` <span class="muted" style="font-size:12px">(бот: ${esc(b.account)})</span>` : ''}<div class="sub">${sub}</div></div>
+      <div class="c-status"><span class="badge ${S_.cls}">${S_.t}</span>${st.code === 'full' || st.code === 'excluded' ? '' : `<div class="missing">${esc(st.missing.join(' · '))}</div>`}</div>
+      <div class="c-hotel"><div class="lbl">Отель${st.housingPaid ? ' · <span style="color:var(--ok)">' + esc(b.housing) + '</span>' : ''}</div>${seg(p, 'hotel', [['', 'нет'], ['requested', 'запрос', 'mid'], ['confirmed', '✅ бронь', 'good']])}</div>
+      <div class="c-ticket"><div class="lbl">${st.byCar ? 'Едет на машине' : 'Билет · ' + (st.who === 'company' ? 'покупаем мы' + (st.passportOk ? ' · паспорт ✅' : ' · паспорта нет') : 'покупает сам')}</div>${seg(p, 'ticket', ticketOpts)}</div>
+      <div class="c-flight"><div class="lbl">Рейс</div><div class="flight">${flight}</div><div class="owner">${m.owner ? '👤 ' + esc(m.owner) : ''}</div></div>
+      <div class="chev">›</div>
+    </div>
+    <div class="details">${open.has(p.id) ? detailsHtml(p) : ''}</div>
+  </div>`;
+}
+
+function input(p, field, label, cls = '', ph = '') {
+  const meta = p.mAt && p.mAt[field] ? `<div class="meta">${esc(p.mAt[field].by)} · ${fmtTime(p.mAt[field].at)}</div>` : '';
+  const tag = field === 'comment'
+    ? `<textarea data-id="${esc(p.id)}" data-field="${field}" placeholder="${esc(ph)}">${esc(p.m[field] || '')}</textarea>`
+    : `<input data-id="${esc(p.id)}" data-field="${field}" value="${esc(p.m[field] || '')}" placeholder="${esc(ph)}">`;
+  return `<div class="field ${cls}"><div class="lbl">${label}</div>${tag}${meta}</div>`;
+}
+
+function detailsHtml(p) {
+  const b = p.bot, st = p.st;
+  let h = '';
+  if (!p.inList) h += `<div class="reason">${esc(p.decisionReason || '')}</div>`;
+  h += '<div class="dgrid">';
+  if (!p.inList) h += `<div class="field"><div class="lbl">Решение</div>${seg(p, 'decision', [['', 'не решено'], ['yes', 'участвует', 'good'], ['no', 'не участвует']])}</div>`;
+  h += `<div class="field"><div class="lbl">Кто покупает билет</div>${seg(p, 'ticketWho', [['', 'по цели (' + (p.goal === 3 ? 'мы' : 'сам') + ')'], ['company', 'мы'], ['self', 'сам']])}</div>`;
+  h += input(p, 'arrFlight', 'Рейс туда', '', b && b.arrFlight ? 'из бота: ' + b.arrFlight : 'например TK2424');
+  h += input(p, 'arrDate', 'Дата прилёта', '', b && b.arrDate ? 'из бота: ' + b.arrDate : '2026-10-10');
+  h += input(p, 'depFlight', 'Рейс обратно', '', b && b.depFlight ? 'из бота: ' + b.depFlight : '');
+  h += input(p, 'owner', 'Ответственный', '', 'кто ведёт человека');
+  h += input(p, 'sponsor', 'Спонсор', '', 'кому писать, если молчит');
+  h += input(p, 'phone', 'Телефон', '', '+7…');
+  if (!b) h += `<div class="field"><div class="lbl">В боте (вручную)</div>${seg(p, 'inBotManual', [['', 'нет'], ['yes', 'да, перешёл', 'good']])}</div>`;
+  h += input(p, 'comment', 'Комментарий / следующий шаг', 'full', 'что обещал, когда перезвонить…');
+  h += '</div>';
+  h += '<div class="botinfo" style="margin-top:12px">';
+  if (b) {
+    h += `<b>Из бота:</b> ${esc(b.fio)}${b.birth ? ' · д.р. ' + esc(b.birth.slice(0, 10)) : ''}${b.email ? ' · ' + esc(b.email) : ''}` +
+      `${b.tg ? ' · <a href="https://t.me/' + encodeURIComponent(b.tg.replace(/^@/, '')) + '" target="_blank" rel="noopener">@' + esc(b.tg.replace(/^@/, '')) + '</a>' : ''}` +
+      ` · ${esc(b.goal || 'цель не указана')} · регистрация ${esc(b.regAt)}${b.updAt ? ', обновлено ' + esc(b.updAt) : ''}<br>` +
+      `Статус в боте: <b>${esc(b.regStatus || '—')}</b> · Паспорт / билет: <b>${esc(b.passport || '—')}</b> · Проживание: <b>${esc(b.housing || '—')}</b><br>` +
+      `Прилёт: ${esc([b.arrFromCity, b.arrToCity].filter(Boolean).join(' → ') || '—')} ${esc(b.arrDate || '')} ${esc(b.arrTime || '')} ${esc(b.arrFlight || '')} ${esc(b.arrAirport || '')}<br>` +
+      `Вылет: ${esc([b.depFromCity, b.depToCity].filter(Boolean).join(' → ') || '—')} ${esc(b.depDate || '')} ${esc(b.depTime || '')} ${esc(b.depFlight || '')}<br>` +
+      `Трансфер: ${esc(b.transferStatus || '—')}${b.transfer ? ' · ' + esc(b.transfer) : ''}`;
+  } else {
+    h += '<span class="muted">В таблице «Участники» заявки нет — пишем/звоним, при молчании подключаем спонсора.</span>';
+  }
+  if (p.inList) h += `<br><span class="muted">PDF: №${p.num} · ${esc(p.vip)} · ${fmtNum(p.points)} баллов${p.alts.length ? ' · другие аккаунты: ' + esc(p.alts.join(', ')) : ''}${p.pdfNote ? ' · ' + esc(p.pdfNote) : ''}</span>`;
+  h += '</div>';
+  return h;
+}
+
+// ---------- правки ----------
+async function save(id, field, value) {
+  const by = myName() || askName();
+  const p = S.people.find(x => x.id === id);
+  if (p) { p.m = { ...p.m, [field]: value }; }
+  try {
+    const r = await fetch('/api/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, field, value, by }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.status);
+    if (p && data.person) Object.assign(p, data.person);
+    if (data.person && data.person.st.code === 'full') toast('✅ ' + data.person.nick + ' — с нами на 100%');
+    load(true);
+  } catch (e) {
+    toast('Не сохранилось: ' + e.message, true);
+    load(true);
+  }
+}
+
+document.addEventListener('click', e => {
+  const segBtn = e.target.closest('.seg button');
+  if (segBtn) {
+    e.stopPropagation();
+    const segEl = segBtn.parentElement;
+    segEl.querySelectorAll('button').forEach(b => b.classList.remove('on', 'good', 'mid'));
+    segBtn.classList.add('on');
+    save(segEl.dataset.id, segEl.dataset.field, segBtn.dataset.v);
+    return;
+  }
+  const chip = e.target.closest('[data-f]');
+  if (chip) { filter = filter === chip.dataset.f && chip.classList.contains('stat') ? 'all' : chip.dataset.f; render(); return; }
+  const ev = e.target.closest('.ev[data-id]');
+  if (ev && ev.dataset.id) {
+    filter = 'all'; query = ''; $('#search').value = '';
+    open.add(ev.dataset.id); render();
+    const row = document.querySelector(`.row[data-id="${CSS.escape(ev.dataset.id)}"]`);
+    if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); flash(ev.dataset.id); }
+    return;
+  }
+  const tog = e.target.closest('[data-toggle]');
+  if (tog && !e.target.closest('a')) {
+    const id = tog.dataset.toggle;
+    open.has(id) ? open.delete(id) : open.add(id);
+    const row = tog.closest('.row');
+    row.classList.toggle('open');
+    const p = S.people.find(x => x.id === id);
+    row.querySelector('.details').innerHTML = open.has(id) && p ? detailsHtml(p) : '';
+  }
+});
+
+document.addEventListener('change', e => {
+  const el = e.target.closest('#list [data-field]');
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) save(el.dataset.id, el.dataset.field, el.value.trim());
+});
+
+$('#search').addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); renderList(); });
+$('#btnName').addEventListener('click', () => askName(true));
+$('#btnPull').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/state?pull=1', { cache: 'no-store' });
+    const data = await r.json();
+    if (data.sheetError) toast('Таблица: ' + data.sheetError, true); else toast('Синхронизировано с таблицей «Участники»');
+    S = null; seenEvents = null; await load(true);
+  } catch (e) { toast('Не получилось: ' + e.message, true); }
+});
+
+// ---------- загрузка выгрузки бота ----------
+let xlsxLoaded = null;
+function loadXlsx() {
+  if (window.XLSX) return Promise.resolve();
+  if (!xlsxLoaded) xlsxLoaded = new Promise((ok, fail) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload = ok; s.onerror = () => fail(new Error('не загрузилась библиотека чтения Excel'));
+    document.head.appendChild(s);
+  });
+  return xlsxLoaded;
+}
+const pad = n => String(n).padStart(2, '0');
+function cellValue(v) {
+  if (v instanceof Date) {
+    if (v.getFullYear() < 1901) return pad(v.getHours()) + ':' + pad(v.getMinutes());
+    return v.getFullYear() + '-' + pad(v.getMonth() + 1) + '-' + pad(v.getDate());
+  }
+  return v;
+}
+$('#btnImport').addEventListener('click', () => $('#fileInput').click());
+$('#fileInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    await loadXlsx();
+    const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { raw: true, defval: '' }).map(r => {
+      const o = {}; for (const [k, v] of Object.entries(r)) o[k.trim()] = cellValue(v); return o;
+    });
+    const r = await fetch('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows, by: myName() || askName(), fileName: file.name }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.status);
+    const x = data.report;
+    toast(`Выгрузка загружена: новых ${x.added}, обновлено ${x.updated}, вне списка ${x.extra}, тестовых пропущено ${x.skipped}`);
+    load(true);
+  } catch (err) {
+    toast('Не удалось загрузить файл: ' + err.message, true);
+  }
+});
+
+// ---------- Google Таблица ----------
+function gasCode(origin, key) {
+  return `// BoostCamp трекер → живая копия в этой Google Таблице.
+// Запустите setup() один раз: создаст лист и обновление каждую минуту.
+const TRACKER_URL = '${origin}/api/export?key=${key}';
+const SHEET_NAME = 'Трекер (live)';
+
+function setup() {
+  ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === 'syncTracker') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('syncTracker').timeBased().everyMinutes(1).create();
+  syncTracker();
+}
+
+function syncTracker() {
+  const res = UrlFetchApp.fetch(TRACKER_URL, { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('Трекер ответил ' + res.getResponseCode());
+  const data = JSON.parse(res.getContentText());
+  const ss = SpreadsheetApp.getActive();
+  const sh = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME, 0);
+  const s = data.summary;
+  const head = [['BoostCamp 2026 — живой статус · с нами на 100%: ' + (s.full || 0) + ' / ' + s.target +
+    ' · в боте: ' + s.inBot + ' · в работе: ' + (s.work || 0) + ' · не в боте: ' + (s.nobot || 0) +
+    ' · требует решения: ' + (s.decision || 0) + ' · обновлено ' + Utilities.formatDate(new Date(), 'Europe/Moscow', 'dd.MM HH:mm') + ' МСК']];
+  const values = [data.headers].concat(data.rows);
+  sh.clearContents();
+  sh.getRange(1, 1).setValues(head).setFontWeight('bold');
+  sh.getRange(3, 1, values.length, data.headers.length).setValues(values);
+  sh.getRange(3, 1, 1, data.headers.length).setFontWeight('bold').setBackground('#1e2129').setFontColor('#ffffff');
+  sh.setFrozenRows(3);
+  const colors = { '✅ С нами 100%': '#cdefd3', '🟠 В работе': '#ffe9c2', '⚪ Не в боте': '#eeeeee', '❓ Требует решения': '#dce8f5' };
+  const bg = data.rows.map(r => data.headers.map(() => colors[r[4]] || '#ffffff'));
+  if (bg.length) sh.getRange(4, 1, bg.length, data.headers.length).setBackgrounds(bg);
+}
+`;
+}
+$('#btnSheets').addEventListener('click', () => {
+  const origin = location.origin, key = (S && S.syncKey) || 'КЛЮЧ';
+  $('#gasCode').textContent = gasCode(origin, key);
+  $('#importFormula').textContent = `=IMPORTDATA("${origin}/api/export?key=${key}&format=csv")`;
+  $('#hookInfo').innerHTML = S && S.hookConfigured
+    ? 'Разработчику бота: при каждой регистрации или правке анкеты отправлять POST на адрес ниже с заголовком <b>x-hook-secret</b> (секрет — у Дмитрия). Поля — как в выгрузке бота.'
+    : 'Вебхук ещё не настроен.';
+  $('#hookExample').textContent = `POST ${origin}/api/hook\nx-hook-secret: <секрет>\nContent-Type: application/json\n\n{"Pulse":"SENSEY","ФИО":"…","Цель":"Цель 3","Telegram username":"…","Рейс прилёта":"TK2424","Дата прилёта":"2026-10-10","Рейс вылета":"PC5015","Participant ID":"…","Дата регистрации":"03.10.2026 10:42 UTC"}`;
+  $('#sheetLink').innerHTML = S && S.sheetId ? `<a href="https://docs.google.com/spreadsheets/d/${encodeURIComponent(S.sheetId)}/edit" target="_blank" rel="noopener">Открыть таблицу «Участники»</a>` : '';
+  $('#dlgSheets').showModal();
+});
+$('#copyGas').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('#gasCode').textContent); toast('Код скопирован'); }
+  catch { toast('Скопируйте код вручную', true); }
+});
+
+// ---------- старт ----------
+askName();
+load(true);
+setInterval(() => { if (document.visibilityState === 'visible') load(); }, 15000);
+setInterval(liveTick, 5000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { load(); document.title = 'BoostCamp трекер'; } });
+</script>
+</body>
+</html>
