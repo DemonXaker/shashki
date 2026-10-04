@@ -246,7 +246,7 @@ const GOALS = {
 const STATUS = {
   full: { t: '✅ С нами 100%', cls: 's-full' }, work: { t: '🟠 В работе', cls: 's-work' },
   nobot: { t: '⚪ Не в боте', cls: 's-nobot' }, decision: { t: '❓ Требует решения', cls: 's-decision' },
-  excluded: { t: 'Не участвует', cls: 's-excluded' },
+  excluded: { t: '✖ Не едет', cls: 's-excluded' },
 };
 const FILTERS = [
   ['all', 'Все'], ['nobot', 'Не в боте'], ['work', 'В работе'], ['full', '100%'], ['decision', 'Требует решения'], ['unpaid', 'Доплата не оплачена'],
@@ -400,12 +400,14 @@ function matches(p) {
 function renderList() {
   const people = S.people.filter(matches);
   if (!people.length) { $('#list').innerHTML = '<div class="empty">Никого под этот фильтр</div>'; return; }
-  const groups = [3, 2, 1, 0].map(g => ({ g, items: people.filter(p => p.inList && (p.goal || 0) === g).sort((a, b) => a.num - b.num) }));
-  const extra = people.filter(p => !p.inList);
+  const out = p => p.st.code === 'excluded';
+  const groups = [3, 2, 1, 0].map(g => ({ g, items: people.filter(p => p.inList && !out(p) && (p.goal || 0) === g).sort((a, b) => a.num - b.num) }));
+  const extra = people.filter(p => !p.inList && !out(p));
+  const gone = people.filter(out);
   let html = '';
   for (const { g, items } of groups) {
     if (!items.length) continue;
-    const all = S.people.filter(p => p.inList && (p.goal || 0) === g);
+    const all = S.people.filter(p => p.inList && p.st.code !== 'excluded' && (p.goal || 0) === g);
     const full = all.filter(p => p.st.code === 'full').length, inBot = all.filter(p => p.st.inBot).length;
     html += `<section class="group" style="--gc:${GOALS[g].c}"><div class="group-h"><b>${GOALS[g].name}</b><span>${GOALS[g].thr} · ${GOALS[g].cover}</span>
       <span class="cnt">${all.length} чел. · в боте ${inBot} · 100% ${full}</span></div>${items.map(rowHtml).join('')}</section>`;
@@ -413,6 +415,10 @@ function renderList() {
   if (extra.length) {
     html += `<section class="group" style="--gc:var(--info)"><div class="group-h"><b>ВНЕ СПИСКА 28.09</b><span>заявки из бота, которых нет среди квалифицированных или которые пришли со второго аккаунта</span>
       <span class="cnt">${extra.length}</span></div>${extra.map(rowHtml).join('')}</section>`;
+  }
+  if (gone.length) {
+    html += `<section class="group" style="--gc:var(--ink-3)"><div class="group-h"><b>НЕ ЕДУТ</b><span>убраны из списка решением команды — вернуть можно в карточке</span>
+      <span class="cnt">${gone.length}</span></div>${gone.map(rowHtml).join('')}</section>`;
   }
   $('#list').innerHTML = html;
 }
@@ -470,6 +476,7 @@ function detailsHtml(p) {
   h += input(p, 'sponsor', 'Спонсор', '', 'кому писать, если молчит');
   h += input(p, 'phone', 'Телефон', '', '+7…');
   if (!b) h += `<div class="field"><div class="lbl">В боте (вручную)</div>${seg(p, 'inBotManual', [['', 'нет'], ['yes', 'да, перешёл', 'good']])}</div>`;
+  h += `<div class="field"><div class="lbl">Участие</div>${seg(p, 'notGoing', [['', 'едет', 'good'], ['yes', '✖ не едет']])}</div>`;
   h += input(p, 'comment', 'Комментарий / следующий шаг', 'full', 'что обещал, когда перезвонить…');
   h += '</div>';
   h += '<div class="botinfo" style="margin-top:12px">';

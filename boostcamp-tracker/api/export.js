@@ -5,7 +5,7 @@
 import { loadState, pullSheet, computeStatus, summary, json, sameSecret } from './_store.js';
 
 const GOAL = g => (g ? `Цель ${g}` : 'без цели');
-const STATUS = { full: '✅ С нами 100%', work: '🟠 В работе', nobot: '⚪ Не в боте', decision: '❓ Требует решения', excluded: '✖ Не участвует' };
+const STATUS = { full: '✅ С нами 100%', work: '🟠 В работе', nobot: '⚪ Не в боте', decision: '❓ Требует решения', excluded: '✖ Не едет' };
 const HOTEL = { '': '—', requested: 'запрошена', confirmed: '✅ подтверждена' };
 const TICKET = { '': '—', asked: 'спросили', bought: '✅ куплен' };
 

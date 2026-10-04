@@ -56,13 +56,36 @@ async function writeRaw(state, etag) {
   await put(PATH, JSON.stringify(state), opts);
 }
 
+function pendingPatches(state, R) {
+  const done = new Set(state.patchesApplied || []);
+  return ((R && R.patches) || []).filter(x => !done.has(x.id));
+}
+
+// Разовая правка из деплоя: { id, nick, field, value, by, comment }.
+function applyPatch(state, x) {
+  const p = state.people.find(q => lc(q.nick) === lc(x.nick));
+  state.patchesApplied = [...(state.patchesApplied || []), x.id];
+  if (!p || !MANUAL_FIELDS[x.field]) return;
+  p.m = p.m || {}; p.mAt = p.mAt || {};
+  const at = new Date().toISOString();
+  p.m[x.field] = x.value; p.mAt[x.field] = { by: x.by, at };
+  if (x.comment) {
+    p.m.comment = [p.m.comment, x.comment].filter(Boolean).join(' · ');
+    p.mAt.comment = { by: x.by, at };
+  }
+  const spec = MANUAL_FIELDS[x.field];
+  addEvent(state, { by: x.by, kind: 'edit', id: p.id, text: `${p.nick}: ${spec.label} → ${spec.values ? spec.values[x.value] : x.value}${x.comment ? ' (' + x.comment + ')' : ''}` });
+}
+
 export async function loadState() {
   const raw = await readRaw();
   if (raw) {
     const R = await loadRoster();
-    if (R && !(raw.state.rosterVersions || []).includes(R.version)) {
+    const needRoster = R && !(raw.state.rosterVersions || []).includes(R.version);
+    if (needRoster || pendingPatches(raw.state, R).length) {
       return mutate(s => {
-        if (!(s.rosterVersions || []).includes(R.version)) applyRoster(s, R.rows, { by: 'система', version: R.version, source: R.source });
+        if (R && !(s.rosterVersions || []).includes(R.version)) applyRoster(s, R.rows, { by: 'система', version: R.version, source: R.source });
+        for (const x of pendingPatches(s, R)) applyPatch(s, x);
       });
     }
     return raw.state;
@@ -586,6 +609,7 @@ export const MANUAL_FIELDS = {
   comment: { label: 'Комментарий' },
   decision: { label: 'Решение', values: { '': 'не решено', yes: 'участвует', no: 'не участвует' } },
   inBotManual: { label: 'В боте (вручную)', values: { '': 'нет', yes: 'да' } },
+  notGoing: { label: 'Участие', values: { '': 'едет', yes: 'не едет' } },
 };
 
 // ---------- статус ----------
@@ -594,7 +618,8 @@ export function computeStatus(p) {
   const m = p.m || {};
   const b = p.bot || {};
   const counted = p.inList || m.decision === 'yes';
-  const excluded = !p.inList && m.decision === 'no';
+  // «не едет» — решение команды; держится и после загрузки нового списка
+  const excluded = m.notGoing === 'yes' || (!p.inList && m.decision === 'no');
   const inBot = !!p.bot || m.inBotManual === 'yes';
   const regDone = m.inBotManual === 'yes' || /актив/i.test(b.regStatus || '');
   const passport = (b.passport || '').toLowerCase();
