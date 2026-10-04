@@ -347,8 +347,10 @@ export function parseCsv(text) {
   }
   if (cell || row.length) { row.push(cell); rows.push(row); }
   if (!rows.length) return [];
-  const head = rows[0].map(h => h.replace(/^﻿/, '').trim());
-  return rows.slice(1).filter(r => r.some(v => v.trim())).map(r => Object.fromEntries(head.map((h, i) => [h, (r[i] || '').trim()])));
+  let hi = rows.slice(0, 10).findIndex(r => r.some(v => /^pulse$/i.test(v.replace(/^\ufeff/, '').trim())));
+  if (hi < 0) hi = 0;
+  const head = rows[hi].map(h => h.replace(/^\ufeff/, '').trim());
+  return rows.slice(hi + 1).filter(r => r.some(v => v.trim())).map(r => Object.fromEntries(head.map((h, i) => [h, (r[i] || '').trim()]).filter(([h]) => h)));
 }
 
 function hash(s) {
@@ -357,37 +359,101 @@ function hash(s) {
   return (h >>> 0).toString(16) + ':' + s.length;
 }
 
+// Живая таблица бота (опубликована в интернете, только чтение) → CSV.
+export function liveCsvUrl(u) {
+  u = String(u || '').trim();
+  if (!u) return '';
+  const m = u.match(/^(https:\/\/docs\.google\.com\/spreadsheets\/d\/e\/[A-Za-z0-9_-]+)\/pub(?:html)?(?:\?(.*))?/);
+  if (!m) return '';
+  const q = new URLSearchParams(m[2] || '');
+  const gid = q.get('gid');
+  return `${m[1]}/pub?output=csv${gid ? '&gid=' + encodeURIComponent(gid) : ''}`;
+}
+
+async function fetchCsv(url, what) {
+  const r = await fetch(url, { redirect: 'follow', cache: 'no-store' });
+  if (!r.ok) throw new Error(`${what} недоступна: HTTP ${r.status}`);
+  const text = await r.text();
+  if (/^\s*</.test(text)) throw new Error(`${what} закрыта или не опубликована`);
+  return text;
+}
+
+const pidOf = r => String(r['Participant ID'] || '').trim();
+const nickOf = r => lc(r['Pulse']);
+
+// Живая таблица — главная по полям, которые в ней есть; из «Участники»
+// добавляем только колонки, которых в живой нет (паспорт, проживание…).
+function mergeRows(liveRows, teamRows) {
+  const liveHeads = new Set(Object.keys(liveRows[0] || {}));
+  const byPid = new Map(), byNick = new Map();
+  for (const t of teamRows) {
+    if (pidOf(t)) byPid.set(pidOf(t), t);
+    else if (nickOf(t)) byNick.set(nickOf(t), t);
+  }
+  return liveRows.map(r => {
+    const t = byPid.get(pidOf(r)) || (!pidOf(r) && byNick.get(nickOf(r)));
+    if (!t) return r;
+    const out = { ...r };
+    for (const [k, v] of Object.entries(t)) if (!liveHeads.has(k) && !k.startsWith('✎') && k !== 'Источник') out[k] = v;
+    return out;
+  });
+}
+
 export async function pullSheet({ force = false } = {}) {
   const id = process.env.SHEET_ID;
-  if (!id) return { skipped: 'no SHEET_ID' };
+  const live = liveCsvUrl(process.env.LIVE_SHEET_URL);
+  if (!id && !live) return { skipped: 'no sources' };
   if (!force && Date.now() - lastPull < 60_000) return { skipped: 'recent' };
   lastPull = Date.now();
   const gid = process.env.SHEET_GID || '0';
-  const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`, { redirect: 'follow', cache: 'no-store' });
-  if (!r.ok) throw new Error('Таблица недоступна: HTTP ' + r.status);
-  const text = await r.text();
-  if (/^\s*</.test(text)) throw new Error('Таблица закрыта: нужен доступ «все, у кого есть ссылка»');
-  const h = hash(text);
+  const [teamRes, liveRes] = await Promise.allSettled([
+    id ? fetchCsv(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`, 'Таблица «Участники»') : Promise.resolve(''),
+    live ? fetchCsv(live, 'Живая таблица бота') : Promise.resolve(''),
+  ]);
+  if (teamRes.status === 'rejected' && (!live || liveRes.status === 'rejected')) throw teamRes.reason;
+  const teamText = teamRes.status === 'fulfilled' ? teamRes.value : '';
+  const liveText = liveRes.status === 'fulfilled' ? liveRes.value : '';
+  const liveError = live && liveRes.status === 'rejected' ? String(liveRes.reason && liveRes.reason.message || liveRes.reason) : '';
+  const h = hash(teamText + '\u0001' + liveText + '\u0001' + (liveError ? 'E' : ''));
   const raw = await readRaw();
   if (raw && raw.state.sheetHash === h) {
-    // таблица не менялась — но правки трекера могли не доехать: дошлём
+    // таблицы не менялись — но правки трекера могли не доехать: дошлём
     const url = raw.state.settings && raw.state.settings.sheetPushUrl;
     const ops = url ? pendingOps(raw.state) : [];
     if (ops.length && PUSH_URL_RE.test(url)) { const p = pushToSheet(url, ops); try { waitUntil(p); } catch {} }
+    if (liveError) throw new Error(liveError);
     return { same: true, resent: ops.length };
   }
-  const rows = parseCsv(text);
-  const headers = Object.keys(rows[0] || {});
-  return mutate(state => {
+  const teamRows = teamText ? parseCsv(teamText) : [];
+  const liveRows = liveText ? parseCsv(liveText) : [];
+  const teamHeaders = Object.keys(teamRows[0] || {});
+  const liveHeaders = Object.keys(liveRows[0] || {});
+  const liveBad = live && liveText && !liveHeaders.includes('Pulse') ? 'В живой таблице бота не нашёл колонку «Pulse»' : '';
+  const out = await mutate(state => {
     if (state.sheetHash === h) return { same: true };
     const first = !state.sheetHash;
-    const rep = applyBotRows(state, rows, { by: 'таблица «Участники»', quietTime: first });
-    rep.manual = syncManualFromRows(state, rows, headers);
+    let rep;
+    if (live && liveText && !liveBad) {
+      const firstLive = !state.liveConnected;
+      rep = applyBotRows(state, mergeRows(liveRows, teamRows), { by: 'бот (живая таблица)', quietTime: firstLive });
+      if (firstLive) {
+        state.liveConnected = new Date().toISOString();
+        addEvent(state, { by: 'система', kind: 'info', text: `Подключена живая таблица бота: ${liveRows.length} заявок (новых для трекера ${rep.added}, вне списка ${rep.extra}). Заявки теперь берутся оттуда.` });
+      }
+    } else if (!live && teamText) {
+      rep = applyBotRows(state, teamRows, { by: 'таблица «Участники»', quietTime: first });
+    } else {
+      rep = { added: 0, updated: 0, skipped: 0, extra: 0 }; // живая таблица недоступна — старыми строками не перетираем
+    }
+    if (teamText) rep.manual = syncManualFromRows(state, teamRows, teamHeaders);
     state.sheetHash = h;
     state.sheetPulledAt = new Date().toISOString();
-    if (first) addEvent(state, { by: 'система', kind: 'info', text: `Подключена таблица «Участники»: ${rows.length} заявок (в списке ${rows.length - rep.extra - rep.skipped}, вне списка ${rep.extra})` });
+    state.liveInfo = live ? { rows: liveRows.length, columns: liveHeaders.length, error: liveError || liveBad, at: state.sheetPulledAt } : null;
+    if (first && !live) addEvent(state, { by: 'система', kind: 'info', text: `Подключена таблица «Участники»: ${teamRows.length} заявок (вне списка ${rep.extra})` });
     return rep;
   });
+  if (liveError || liveBad) throw new Error(liveError || liveBad);
+  return out;
 }
 
 // ---------- ручные колонки ✎ в таблице «Участники» (в обе стороны) ----------
