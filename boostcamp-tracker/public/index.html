@@ -210,12 +210,18 @@
   <h2>Google Таблица и бот</h2>
   <p><b>Откуда берутся заявки:</b> таблица «Участники» (бот + колонки «Паспорт», «Проживание») — трекер забирает её сам раз в минуту, пока открыт хотя бы у одного человека. Новые строки и правки в ней сразу появляются в ленте. <span id="sheetLink"></span></p>
   <p><b>Где отмечать:</b> отель, кто покупает билет, куплен ли, рейсы, ответственный, спонсор — здесь, в трекере. Ниже — как получить живую копию всего трекера обратно в Google Таблицу.</p>
-  <h3>1. Живая копия в Google Таблице (один раз, ~3 минуты)</h3>
+  <h3>1. Живая копия в Google Таблице — правки видны сразу (один раз, ~5 минут)</h3>
   <ol>
-    <li>Откройте таблицу «BoostCamp 2026 — участники и цели» → <b>Расширения → Apps Script</b>.</li>
+    <li>Откройте нужную Google Таблицу → <b>Расширения → Apps Script</b>.</li>
     <li>Удалите всё в редакторе, вставьте код ниже (кнопка «Скопировать»), нажмите 💾.</li>
-    <li>Выберите функцию <b>setup</b> → <b>Выполнить</b> → разрешите доступ. Появится лист «Трекер (live)» и обновление каждую минуту.</li>
+    <li>Выберите функцию <b>setup</b> → <b>Выполнить</b> → разрешите доступ. Появится лист «Трекер (live)», он обновляется раз в минуту.</li>
+    <li>Чтобы правки появлялись <b>сразу</b>: <b>Развернуть → Новое развёртывание → Веб-приложение</b>, «Выполнять от имени: меня», «Доступ: все» → <b>Развернуть</b> → скопируйте URL (…/exec) и вставьте сюда:</li>
   </ol>
+  <div style="display:flex; gap:8px; margin:6px 0 10px; flex-wrap:wrap">
+    <input id="pushUrl" class="search" style="min-width:260px" placeholder="https://script.google.com/macros/s/…/exec">
+    <button class="btn primary" id="savePush">Подключить</button>
+  </div>
+  <p id="pushState" class="muted"></p>
   <pre class="code" id="gasCode"></pre>
   <div style="display:flex; gap:8px; margin-top:8px"><button class="btn primary" id="copyGas">Скопировать код</button></div>
   <h3>Без скрипта (обновляется ~раз в час)</h3>
@@ -597,6 +603,13 @@ function setup() {
   syncTracker();
 }
 
+// Трекер дёргает этот адрес после каждой правки — лист обновляется сразу.
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  if (lock.tryLock(20000)) { try { syncTracker(); } finally { lock.releaseLock(); } }
+  return ContentService.createTextOutput('ok');
+}
+
 function syncTracker() {
   const res = UrlFetchApp.fetch(TRACKER_URL, { muteHttpExceptions: true });
   if (res.getResponseCode() !== 200) throw new Error('Трекер ответил ' + res.getResponseCode());
@@ -627,8 +640,22 @@ $('#btnSheets').addEventListener('click', () => {
     ? 'Разработчику бота: при каждой регистрации или правке анкеты отправлять POST на адрес ниже с заголовком <b>x-hook-secret</b> (секрет — у Дмитрия). Поля — как в выгрузке бота.'
     : 'Вебхук ещё не настроен.';
   $('#hookExample').textContent = `POST ${origin}/api/hook\nx-hook-secret: <секрет>\nContent-Type: application/json\n\n{"Pulse":"SENSEY","ФИО":"…","Цель":"Цель 3","Telegram username":"…","Рейс прилёта":"TK2424","Дата прилёта":"2026-10-10","Рейс вылета":"PC5015","Participant ID":"…","Дата регистрации":"03.10.2026 10:42 UTC"}`;
+  $('#pushUrl').value = (S && S.sheetPushUrl) || '';
+  $('#pushState').textContent = S && S.sheetPushUrl ? '✅ Подключено: каждая правка сразу уходит в таблицу.' : 'Пока не подключено — таблица обновляется раз в минуту по таймеру скрипта.';
   $('#sheetLink').innerHTML = S && S.sheetId ? `<a href="https://docs.google.com/spreadsheets/d/${encodeURIComponent(S.sheetId)}/edit" target="_blank" rel="noopener">Открыть таблицу «Участники»</a>` : '';
   $('#dlgSheets').showModal();
+});
+$('#savePush').addEventListener('click', async () => {
+  const btn = $('#savePush'); btn.disabled = true; btn.textContent = 'Проверяю…';
+  try {
+    const r = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sheetPushUrl: $('#pushUrl').value.trim(), by: myName() }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.status);
+    toast($('#pushUrl').value.trim() ? 'Google Таблица подключена: правки уходят сразу' : 'Отключено');
+    $('#pushState').textContent = $('#pushUrl').value.trim() ? '✅ Подключено: каждая правка сразу уходит в таблицу.' : 'Отключено.';
+    load(true);
+  } catch (e) { toast('Не подключилось: ' + e.message, true); }
+  finally { btn.disabled = false; btn.textContent = 'Подключить'; }
 });
 $('#copyGas').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText($('#gasCode').textContent); toast('Код скопирован'); }
@@ -638,7 +665,7 @@ $('#copyGas').addEventListener('click', async () => {
 // ---------- старт ----------
 askName();
 load(true);
-setInterval(() => { if (document.visibilityState === 'visible') load(); }, 15000);
+setInterval(() => { if (document.visibilityState === 'visible') load(); }, 10000);
 setInterval(liveTick, 5000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { load(); document.title = 'BoostCamp трекер'; } });
 </script>

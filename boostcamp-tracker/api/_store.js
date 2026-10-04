@@ -2,7 +2,12 @@
 //
 // Правки нескольких человек не затирают друг друга: запись идёт с ifMatch
 // по ETag прочитанной версии, при конфликте перечитываем и повторяем.
-import { get, put, BlobPreconditionFailedError } from '@vercel/blob';
+//
+// ETag берём из head(), а не из get(): get() отдаёт заголовок etag ответа
+// хранилища, и в другом формате, чем ждёт ifMatch у put() — из-за этого
+// каждая запись падала с «Precondition failed» (04.10).
+import { get, head, put, BlobPreconditionFailedError, BlobNotFoundError } from '@vercel/blob';
+import { waitUntil } from '@vercel/functions';
 
 // Список квалифицированных (PDF) в git не лежит: он либо приходит файлом
 // _seed.js при деплое с локальной машины, либо через env SEED_JSON.
@@ -20,10 +25,17 @@ export const GOAL_TARGET = 50;
 let SEED = { people: [] };
 
 async function readRaw() {
+  let meta;
+  try { meta = await head(PATH); } catch (e) {
+    if (e instanceof BlobNotFoundError || /not found|does not exist/i.test(String(e && e.message))) return null;
+    throw e;
+  }
+  // сначала версия, потом содержимое: если между ними кто-то запишет,
+  // put() с этой версией не пройдёт и мы перечитаем — гонка безопасна
   const res = await get(PATH, { access: 'private', useCache: false });
   if (!res || res.statusCode !== 200) return null;
   const text = await new Response(res.stream).text();
-  return { state: JSON.parse(text), etag: res.blob.etag };
+  return { state: JSON.parse(text), etag: meta.etag };
 }
 
 async function writeRaw(state, etag) {
@@ -48,21 +60,49 @@ export async function loadState() {
 // Прочитать → изменить → записать с защитой от гонки. fn меняет state на месте
 // и может вернуть значение, которое уйдёт вызывающему.
 export async function mutate(fn) {
-  for (let attempt = 0; attempt < 6; attempt++) {
+  let prevStamp = null, idle = 0;
+  for (let attempt = 0; attempt < 8; attempt++) {
     const raw = await readRaw();
     if (!raw) SEED = await loadSeed();
     const state = raw ? raw.state : initialState();
+    // Если версия «не совпала», а файл за это время никто не менял (та же
+    // отметка updatedAt) — конфликт ложный: пишем без проверки версии,
+    // чтобы правка не потерялась.
+    const stamp = raw ? raw.state.updatedAt || '' : null;
+    idle = raw && stamp === prevStamp ? idle + 1 : 0;
+    prevStamp = stamp;
     const result = await fn(state);
     try {
-      await writeRaw(state, raw ? raw.etag : undefined);
+      await writeRaw(state, raw && idle < 2 ? raw.etag : undefined);
+      notifySheet(state);
       return result === undefined ? state : result;
     } catch (e) {
-      const conflict = e instanceof BlobPreconditionFailedError || /precondition|already exists/i.test(String(e && e.message));
+      const conflict = e instanceof BlobPreconditionFailedError || /precondition|etag/i.test(String(e && e.message));
       if (!conflict) throw e;
-      await new Promise(r => setTimeout(r, 80 + Math.random() * 220));
+      await new Promise(r => setTimeout(r, 60 + Math.random() * 180));
     }
   }
   throw new Error('Не удалось сохранить: слишком много одновременных правок, повторите.');
+}
+
+// ---------- мгновенное обновление Google Таблицы ----------
+//
+// Если в трекере сохранён адрес веб-приложения Apps Script (диалог «Google
+// Таблица и бот»), после каждой записи дёргаем его — скрипт сразу
+// перезаписывает лист «Трекер (live)». Ответа не ждём: waitUntil держит
+// функцию живой, пока запрос не уйдёт, но пользователь не ждёт Google.
+export const PUSH_URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}\/exec$/;
+
+export function pushToSheet(url) {
+  return fetch(url, { method: 'POST', body: 'sync', redirect: 'follow', signal: AbortSignal.timeout(25_000) })
+    .then(r => ({ ok: r.ok, status: r.status }))
+    .catch(e => ({ ok: false, error: String(e && e.message || e) }));
+}
+
+function notifySheet(state) {
+  const url = state.settings && state.settings.sheetPushUrl;
+  if (!url || !PUSH_URL_RE.test(url)) return;
+  try { waitUntil(pushToSheet(url)); } catch { pushToSheet(url); }
 }
 
 export function addEvent(state, ev) {

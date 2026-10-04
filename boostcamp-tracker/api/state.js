@@ -21,6 +21,7 @@ export default async function handler(req, res) {
       sheetPulledAt: state.sheetPulledAt || '',
       sheetId: process.env.SHEET_ID || '',
       sheetError,
+      sheetPushUrl: (state.settings && state.settings.sheetPushUrl) || '',
     });
   } catch (e) {
     json(res, 500, { error: String(e && e.message || e) });
