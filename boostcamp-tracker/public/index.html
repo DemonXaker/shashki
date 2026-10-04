@@ -76,7 +76,8 @@
   .row { background:var(--bg-2); border:1px solid var(--line); border-radius:14px; margin-bottom:6px; transition:border-color .2s, box-shadow .4s }
   .row.full { border-color:#00c85355 }
   .row.flash { box-shadow:0 0 0 2px var(--accent) }
-  .row-main { display:grid; grid-template-columns: 30px minmax(140px,1.2fr) minmax(170px,1.3fr) 196px 200px 110px 20px; gap:10px; align-items:center; padding:10px 12px; cursor:pointer }
+  .row-main { display:grid; grid-template-columns: 30px minmax(130px,1.1fr) minmax(160px,1.2fr) 210px 270px 100px 20px; gap:10px; align-items:center; padding:10px 12px; cursor:pointer }
+  .row-main > * { min-width:0 }
   .num { font:500 12px var(--mono); color:var(--ink-3) }
   .who b { font-weight:800 }
   .who .sub { font-size:12px; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
@@ -87,12 +88,17 @@
   .missing { font-size:12px; color:var(--ink-3); margin-top:3px }
   .tag { display:inline-block; margin-left:6px; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; vertical-align:1px }
   .t-info { background:var(--info-bg); color:var(--info) } .t-bad { background:var(--bad-bg); color:var(--bad) } .t-ok { background:var(--ok-bg); color:var(--ok) }
-  .seg { display:inline-flex; border:1px solid var(--line-2); border-radius:9px; overflow:hidden }
-  .seg button { border:0; background:transparent; padding:5px 7px; font-size:12px; font-weight:600; color:var(--ink-3); cursor:pointer; white-space:nowrap }
+  .seg { display:inline-flex; flex-wrap:wrap; max-width:100%; border:1px solid var(--line-2); border-radius:9px; overflow:hidden }
+  .seg button { border:0; background:transparent; padding:7px 9px; min-height:32px; font-size:12px; font-weight:600; color:var(--ink-3); cursor:pointer; white-space:nowrap }
   .seg button + button { border-left:1px solid var(--line) }
   .seg button.on { background:var(--bg-3); color:var(--ink) }
   .seg button.on.good { background:var(--ok-bg); color:var(--ok) }
   .seg button.on.mid { background:var(--warn-bg); color:var(--warn) }
+  .turkey { display:inline-flex; align-items:center; gap:6px; margin-top:6px; min-height:32px; padding:6px 12px; border:1px dashed var(--line-2);
+            border-radius:9px; background:transparent; color:var(--ink-2); font-size:12.5px; font-weight:700; cursor:pointer; white-space:nowrap }
+  .turkey:hover { border-color:var(--ok) }
+  .turkey.on { background:var(--ok-bg); color:var(--ok); border:1px solid #00c85366 }
+  .seg.dim { opacity:.45 }
   .lbl { font:500 10.5px var(--mono); letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); margin-bottom:3px }
   .flight { font:500 12.5px var(--mono); color:var(--ink-2) }
   .owner { font-size:12.5px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
@@ -425,9 +431,9 @@ function renderList() {
   $('#list').innerHTML = html;
 }
 
-function seg(p, field, opts) {
+function seg(p, field, opts, dim) {
   const cur = p.m[field] || '';
-  return `<div class="seg" data-id="${esc(p.id)}" data-field="${field}">` + opts.map(([v, t, cls]) =>
+  return `<div class="seg ${dim ? 'dim' : ''}" data-id="${esc(p.id)}" data-field="${field}">` + opts.map(([v, t, cls]) =>
     `<button type="button" data-v="${v}" class="${cur === v ? 'on ' + (cls || '') : ''}">${t}</button>`).join('') + '</div>';
 }
 
@@ -442,8 +448,7 @@ function rowHtml(p) {
     + (/не\s*оплач/i.test(p.surcharge || '') ? '<span class="tag t-bad">доплата не оплачена</span>' : /оплач/i.test(p.surcharge || '') ? '<span class="tag t-ok">доплата ✅</span>' : '');
   const ticketOpts = (st.who === 'company'
     ? [['', 'не куплен'], ['bought', '✅ куплен', 'good']]
-    : [['', 'не спросили'], ['asked', 'спросили', 'mid'], ['bought', '✅ купил', 'good']])
-    .concat([['notneeded', '🇹🇷 не нужен', 'good']]);
+    : [['', 'не спросили'], ['asked', 'спросили', 'mid'], ['bought', '✅ купил', 'good']]);
   const flight = st.arrFlight || st.depFlight ? `${esc(st.arrFlight || '—')} → ${esc(st.depFlight || '—')}` : '<span class="muted">рейс —</span>';
   return `<div class="row ${open.has(p.id) ? 'open' : ''} ${st.code === 'full' ? 'full' : ''}" data-id="${esc(p.id)}">
     <div class="row-main" data-toggle="${esc(p.id)}">
@@ -451,7 +456,7 @@ function rowHtml(p) {
       <div class="who"><b>${esc(p.nick)}</b>${tags}${b.account && b.account.toLowerCase() !== p.nick.toLowerCase() ? ` <span class="muted" style="font-size:12px">(бот: ${esc(b.account)})</span>` : ''}<div class="sub">${sub}</div></div>
       <div class="c-status"><span class="badge ${S_.cls}">${S_.t}</span>${st.code === 'full' || st.code === 'excluded' ? '' : `<div class="missing">${esc(st.missing.join(' · '))}</div>`}</div>
       <div class="c-hotel"><div class="lbl">Отель${st.housingPaid ? ' · <span style="color:var(--ok)">' + esc(b.housing) + '</span>' : ''}</div>${seg(p, 'hotel', [['', 'нет'], ['requested', 'запрос', 'mid'], ['confirmed', '✅ бронь', 'good']])}</div>
-      <div class="c-ticket"><div class="lbl">${st.inTurkey ? 'Уже в Турции · билет не нужен' : st.byCar ? 'Едет на машине' : 'Билет · ' + (st.who === 'company' ? 'покупаем мы' + (st.passportOk ? ' · паспорт ✅' : ' · паспорта нет') : 'покупает сам')}</div>${seg(p, 'ticket', ticketOpts)}</div>
+      <div class="c-ticket"><div class="lbl">${st.inTurkey ? 'Уже в Турции · билет не нужен' : st.byCar ? 'Едет на машине' : 'Билет · ' + (st.who === 'company' ? 'покупаем мы' + (st.passportOk ? ' · паспорт ✅' : ' · паспорта нет') : 'покупает сам')}</div>${seg(p, 'ticket', ticketOpts, st.inTurkey)}<br><button type="button" class="turkey ${st.inTurkey ? 'on' : ''}" data-id="${esc(p.id)}" data-v="${st.inTurkey ? '' : 'notneeded'}">🇹🇷 ${st.inTurkey ? 'Уже в Турции ✓' : 'Уже в Турции'}</button></div>
       <div class="c-flight"><div class="lbl">Рейс</div><div class="flight">${flight}</div><div class="owner">${m.owner ? '👤 ' + esc(m.owner) : ''}</div></div>
       <div class="chev">›</div>
     </div>
@@ -521,6 +526,13 @@ async function save(id, field, value) {
 }
 
 document.addEventListener('click', e => {
+  const tb = e.target.closest('button.turkey');
+  if (tb) {
+    e.stopPropagation();
+    tb.classList.toggle('on');
+    save(tb.dataset.id, 'ticket', tb.dataset.v);
+    return;
+  }
   const segBtn = e.target.closest('.seg button');
   if (segBtn) {
     e.stopPropagation();
