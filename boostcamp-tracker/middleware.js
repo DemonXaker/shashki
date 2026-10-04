@@ -5,7 +5,7 @@
 export const config = { matcher: '/:path*' };
 
 // Иконки отдаём без пароля: данных в них нет.
-const PUBLIC = new Set(['/favicon.svg', '/favicon.ico', '/api/hook', '/api/export']);
+const PUBLIC = new Set(['/favicon.svg', '/favicon.ico', '/api/hook', '/api/export', '/api/sheet-edit']);
 const COOKIE = 'bc_tracker';
 const MONTH = 60 * 60 * 24 * 30;
 

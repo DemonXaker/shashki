@@ -93,16 +93,18 @@ export async function mutate(fn) {
 // функцию живой, пока запрос не уйдёт, но пользователь не ждёт Google.
 export const PUSH_URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}\/exec$/;
 
-export function pushToSheet(url) {
-  return fetch(url, { method: 'POST', body: 'sync', redirect: 'follow', signal: AbortSignal.timeout(25_000) })
-    .then(r => ({ ok: r.ok, status: r.status }))
+export function pushToSheet(url, ops = []) {
+  const body = JSON.stringify({ key: process.env.SYNC_KEY || '', ops });
+  return fetch(url, { method: 'POST', body, headers: { 'Content-Type': 'application/json' }, redirect: 'follow', signal: AbortSignal.timeout(25_000) })
+    .then(async r => ({ ok: r.ok, status: r.status, text: (await r.text().catch(() => '')).slice(0, 200) }))
     .catch(e => ({ ok: false, error: String(e && e.message || e) }));
 }
 
 function notifySheet(state) {
   const url = state.settings && state.settings.sheetPushUrl;
   if (!url || !PUSH_URL_RE.test(url)) return;
-  try { waitUntil(pushToSheet(url)); } catch { pushToSheet(url); }
+  const p = pushToSheet(url, pendingOps(state));
+  try { waitUntil(p); } catch {}
 }
 
 export function addEvent(state, ev) {
@@ -175,6 +177,7 @@ const FIELDS = {
   regAt: ['Дата регистрации', 'registered_at', 'created_at'],
   updAt: ['Последнее обновление', 'updated_at'],
   pid: ['Participant ID', 'participant_id', 'id'],
+  source: ['Источник', 'source'],
   tgId: ['Telegram ID', 'telegram_id'],
 };
 
@@ -224,6 +227,7 @@ export function applyBotRows(state, rows, { by = 'бот', quietTime = false } =
 
   for (const r of norm) {
     if (isTestRow(r)) { report.skipped++; continue; }
+    if (lc(r.source) === 'трекер') continue; // строку добавил трекер — это не заявка бота
     // уже известная заявка (по ID участника бота) — обновляем там, где она лежит
     let person = r.pid && state.people.find(p => p.bot && p.bot.pid === r.pid);
     let reason = '';
@@ -327,17 +331,150 @@ export async function pullSheet({ force = false } = {}) {
   if (/^\s*</.test(text)) throw new Error('Таблица закрыта: нужен доступ «все, у кого есть ссылка»');
   const h = hash(text);
   const raw = await readRaw();
-  if (raw && raw.state.sheetHash === h) return { same: true };
+  if (raw && raw.state.sheetHash === h) {
+    // таблица не менялась — но правки трекера могли не доехать: дошлём
+    const url = raw.state.settings && raw.state.settings.sheetPushUrl;
+    const ops = url ? pendingOps(raw.state) : [];
+    if (ops.length && PUSH_URL_RE.test(url)) { const p = pushToSheet(url, ops); try { waitUntil(p); } catch {} }
+    return { same: true, resent: ops.length };
+  }
   const rows = parseCsv(text);
+  const headers = Object.keys(rows[0] || {});
   return mutate(state => {
     if (state.sheetHash === h) return { same: true };
     const first = !state.sheetHash;
     const rep = applyBotRows(state, rows, { by: 'таблица «Участники»', quietTime: first });
+    rep.manual = syncManualFromRows(state, rows, headers);
     state.sheetHash = h;
     state.sheetPulledAt = new Date().toISOString();
     if (first) addEvent(state, { by: 'система', kind: 'info', text: `Подключена таблица «Участники»: ${rows.length} заявок (в списке ${rows.length - rep.extra - rep.skipped}, вне списка ${rep.extra})` });
     return rep;
   });
+}
+
+// ---------- ручные колонки ✎ в таблице «Участники» (в обе стороны) ----------
+//
+// Каждое ручное поле трекера — колонка «✎ …» в таблице. Направление правки
+// определяем по p.sheetM — значению, которое трекер последним видел в таблице:
+//   ячейка ≠ sheetM  → её поменяли в таблице → берём в трекер;
+//   ячейка = sheetM, а в трекере другое → правка трекера ещё не доехала →
+//   досылаем в таблицу (pendingOps).
+
+export const SHEET_COLS = {
+  hotel: '✎ Отель', ticketWho: '✎ Билет покупает', ticket: '✎ Билет',
+  arrFlight: '✎ Рейс туда', arrDate: '✎ Дата прилёта', depFlight: '✎ Рейс обратно',
+  owner: '✎ Ответственный', sponsor: '✎ Спонсор', phone: '✎ Телефон',
+  comment: '✎ Комментарий', decision: '✎ Решение',
+};
+const COL_FIELD = Object.fromEntries(Object.entries(SHEET_COLS).map(([f, c]) => [c, f]));
+export const fieldByColumn = col => COL_FIELD[String(col || '').trim()];
+
+const TO_SHEET = {
+  hotel: { requested: 'запрошена', confirmed: '✅ подтверждена' },
+  ticketWho: { company: 'мы', self: 'сам' },
+  ticket: { asked: 'спросили', bought: '✅ куплен' },
+  decision: { yes: 'участвует', no: 'не участвует' },
+};
+export const SHEET_CHOICES = Object.fromEntries(Object.entries(TO_SHEET).map(([f, v]) => [SHEET_COLS[f], Object.values(v)]));
+
+export function toSheet(field, code) {
+  code = code || '';
+  return TO_SHEET[field] ? (TO_SHEET[field][code] || '') : code;
+}
+
+// Текст ячейки → код поля. undefined — непонятное значение, его не трогаем.
+export function fromSheet(field, text) {
+  const t = String(text ?? '').trim();
+  const l = t.toLowerCase();
+  if (!TO_SHEET[field]) return t.slice(0, 500);
+  if (!l || /^(нет|-|—|не решено)$/.test(l)) return '';
+  if (field === 'hotel') return /^не/.test(l) ? '' : /подтв|✅|брон|оплач|^да/.test(l) ? 'confirmed' : /запро/.test(l) ? 'requested' : undefined;
+  if (field === 'ticket') return /^не/.test(l) ? '' : /спрос/.test(l) ? 'asked' : /куп|✅|^да/.test(l) ? 'bought' : undefined;
+  if (field === 'ticketWho') return /^мы|компан/.test(l) ? 'company' : /сам/.test(l) ? 'self' : undefined;
+  if (field === 'decision') return /^не/.test(l) ? 'no' : /участ|^да/.test(l) ? 'yes' : undefined;
+}
+
+function rowKeyOf(p) {
+  return { pid: (p.bot && p.bot.pid) || '', nick: (p.bot && p.bot.account) || p.nick };
+}
+
+// Правки трекера, которых ещё нет в таблице.
+export function pendingOps(state, limit = 300) {
+  const ops = [];
+  for (const p of state.people) {
+    const m = p.m || {}, seen = p.sheetM || {};
+    for (const [f, col] of Object.entries(SHEET_COLS)) {
+      const want = m[f] || '';
+      if (want === (seen[f] ?? '')) continue;
+      const k = rowKeyOf(p);
+      ops.push({ pid: k.pid, nick: k.nick, goal: p.goal ? `Цель ${p.goal}` : '', col, value: toSheet(f, want) });
+      if (ops.length >= limit) return ops;
+    }
+  }
+  return ops;
+}
+
+function findPersonForRow(state, r) {
+  if (r.pid) { const p = state.people.find(x => x.bot && x.bot.pid === r.pid); if (p) return p; }
+  if (lc(r.source) === 'трекер' || !r.pid) {
+    const n = lc(r.account);
+    return n ? state.people.find(x => !x.bot && lc(x.nick) === n) : null;
+  }
+  return null;
+}
+
+// Забрать правки ✎-колонок из строк таблицы. headers — заголовки CSV.
+export function syncManualFromRows(state, rows, headers) {
+  const cols = Object.values(SHEET_COLS).filter(c => headers.includes(c));
+  // Колонку удалили (вставили выгрузку без ✎) — забываем, что видели в ней:
+  // значения трекера уйдут в таблицу заново, скрипт вернёт колонку.
+  for (const [f, col] of Object.entries(SHEET_COLS)) {
+    if (cols.includes(col)) continue;
+    for (const p of state.people) if (p.sheetM && f in p.sheetM) delete p.sheetM[f];
+  }
+  if (!cols.length) return { applied: 0 };
+  const changes = [];
+  const withRow = new Set();
+  for (const row of rows) {
+    const r = normalizeRow(row);
+    const p = findPersonForRow(state, r);
+    if (!p) continue;
+    withRow.add(p.id);
+    p.m = p.m || {}; p.mAt = p.mAt || {}; p.sheetM = p.sheetM || {};
+    for (const col of cols) {
+      const f = COL_FIELD[col];
+      const code = fromSheet(f, row[col]);
+      if (code === undefined) continue;
+      const seen = p.sheetM[f];
+      if (seen === undefined) {
+        // первая встреча с колонкой: значение из таблицы берём, если в трекере пусто
+        if (code && !p.m[f]) changes.push({ p, f, code, first: true });
+        else p.sheetM[f] = code;
+        continue;
+      }
+      if (code !== seen) changes.push({ p, f, code });
+    }
+  }
+  // Строку человека удалили из таблицы — его значения дошлём заново.
+  for (const p of state.people) if (p.sheetM && !withRow.has(p.id)) p.sheetM = {};
+  // Ручные очистки приходят сразу через onEdit. Если же сверка видит, что
+  // ✎-ячейки опустели сразу в нескольких строках, — это вставка выгрузки
+  // поверх колонок: трекер не стираем, а возвращаем значения в таблицу.
+  const clears = changes.filter(c => !c.code && (c.p.m[c.f] || ''));
+  const wipe = new Set(clears.map(c => c.p.id)).size >= 2;
+  let applied = 0;
+  for (const c of changes) {
+    if (wipe && !c.code) { c.p.sheetM[c.f] = ''; continue; }
+    c.p.sheetM[c.f] = c.code;
+    if ((c.p.m[c.f] || '') === c.code) continue;
+    c.p.m[c.f] = c.code;
+    c.p.mAt[c.f] = { by: 'таблица', at: new Date().toISOString() };
+    applied++;
+    const spec = MANUAL_FIELDS[c.f];
+    addEvent(state, { by: 'таблица «Участники»', kind: 'edit', id: c.p.id, text: `${c.p.nick}: ${spec.label} → ${spec.values ? spec.values[c.code] : (c.code || '—')} (правка в таблице)` });
+  }
+  if (wipe) addEvent(state, { by: 'система', kind: 'info', text: `В таблице разом очищено ${clears.length} ✎-ячеек — похоже, вставили новую выгрузку. Значения трекера возвращены в таблицу.` });
+  return { applied, wipe };
 }
 
 // ---------- ручные отметки ----------

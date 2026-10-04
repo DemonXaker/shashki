@@ -210,12 +210,13 @@
   <h2>Google Таблица и бот</h2>
   <p><b>Откуда берутся заявки:</b> таблица «Участники» (бот + колонки «Паспорт», «Проживание») — трекер забирает её сам раз в минуту, пока открыт хотя бы у одного человека. Новые строки и правки в ней сразу появляются в ленте. <span id="sheetLink"></span></p>
   <p><b>Где отмечать:</b> отель, кто покупает билет, куплен ли, рейсы, ответственный, спонсор — здесь, в трекере. Ниже — как получить живую копию всего трекера обратно в Google Таблицу.</p>
-  <h3>1. Живая копия в Google Таблице — правки видны сразу (один раз, ~5 минут)</h3>
+  <h3>1. Синхронизация с таблицей «Участники» в обе стороны (один раз, ~5 минут)</h3>
+  <p>В таблице появятся колонки <b>✎ Отель, ✎ Билет покупает, ✎ Билет, ✎ Рейс туда/обратно, ✎ Дата прилёта, ✎ Ответственный, ✎ Спонсор, ✎ Телефон, ✎ Комментарий, ✎ Решение</b>. Правка в трекере сразу пишется в них; правка этих ячеек в таблице сразу приходит в трекер. Люди, которых ещё нет в боте, добавляются в конец таблицы с пометкой «Источник: трекер». Плюс лист «Трекер (live)» с полным статусом по всем.</p>
   <ol>
-    <li>Откройте нужную Google Таблицу → <b>Расширения → Apps Script</b>.</li>
+    <li>Откройте таблицу «Участники» (нужны <b>права редактора</b> — у владельца таблицы они есть) → <b>Расширения → Apps Script</b>.</li>
     <li>Удалите всё в редакторе, вставьте код ниже (кнопка «Скопировать»), нажмите 💾.</li>
-    <li>Выберите функцию <b>setup</b> → <b>Выполнить</b> → разрешите доступ. Появится лист «Трекер (live)», он обновляется раз в минуту.</li>
-    <li>Чтобы правки появлялись <b>сразу</b>: <b>Развернуть → Новое развёртывание → Веб-приложение</b>, «Выполнять от имени: меня», «Доступ: все» → <b>Развернуть</b> → скопируйте URL (…/exec) и вставьте сюда:</li>
+    <li>Выберите функцию <b>setup</b> → <b>Выполнить</b> → разрешите доступ. Появятся ✎-колонки и лист «Трекер (live)».</li>
+    <li><b>Развернуть → Новое развёртывание → Веб-приложение</b>, «Выполнять от имени: меня», «Доступ: все» → <b>Развернуть</b> → скопируйте URL (…/exec) и вставьте сюда:</li>
   </ol>
   <div style="display:flex; gap:8px; margin:6px 0 10px; flex-wrap:wrap">
     <input id="pushUrl" class="search" style="min-width:260px" placeholder="https://script.google.com/macros/s/…/exec">
@@ -591,35 +592,150 @@ $('#fileInput').addEventListener('change', async e => {
 });
 
 // ---------- Google Таблица ----------
+const SHEET_CHOICES_ALL = {
+  '✎ Отель': ['запрошена', '✅ подтверждена'], '✎ Билет покупает': ['мы', 'сам'], '✎ Билет': ['спросили', '✅ куплен'],
+  '✎ Рейс туда': null, '✎ Дата прилёта': null, '✎ Рейс обратно': null, '✎ Ответственный': null, '✎ Спонсор': null,
+  '✎ Телефон': null, '✎ Комментарий': null, '✎ Решение': ['участвует', 'не участвует'],
+};
 function gasCode(origin, key) {
-  return `// BoostCamp трекер → живая копия в этой Google Таблице.
-// Запустите setup() один раз: создаст лист и обновление каждую минуту.
-const TRACKER_URL = '${origin}/api/export?key=${key}';
-const SHEET_NAME = 'Трекер (live)';
+  return `// BoostCamp трекер ⇄ таблица «Участники» — синхронизация в обе стороны.
+// Установка (нужны права редактора этой таблицы):
+//   1) вставить код, сохранить; 2) выбрать setup → Выполнить → разрешить;
+//   3) Развернуть → Новое развёртывание → Веб-приложение, выполнять от имени «меня»,
+//      доступ «все» → скопировать URL …/exec и вставить в трекер (кнопка «Подключить»).
+const TRACKER = '${origin}';
+const KEY = '${key}';
+const LIVE_SHEET = 'Трекер (live)';
+const SOURCE_COL = 'Источник';
+const MANUAL_COLS = ${JSON.stringify(Object.keys(SHEET_CHOICES_ALL))};
+const CHOICES = ${JSON.stringify(Object.fromEntries(Object.entries(SHEET_CHOICES_ALL).filter(([, v]) => v)))};
+
+function dataSheet_() {
+  const ss = SpreadsheetApp.getActive();
+  return ss.getSheets().find(s => s.getSheetId() === 0) || ss.getSheets()[0];
+}
 
 function setup() {
-  ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === 'syncTracker') ScriptApp.deleteTrigger(t); });
+  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('syncTracker').timeBased().everyMinutes(1).create();
+  ScriptApp.newTrigger('onSheetEdit').forSpreadsheet(SpreadsheetApp.getActive()).onEdit().create();
+  ensureColumns_(dataSheet_());
   syncTracker();
 }
 
-// Трекер дёргает этот адрес после каждой правки — лист обновляется сразу.
+// ✎-колонки и «Источник» в конце шапки + выпадающие списки.
+function ensureColumns_(sh) {
+  const lastCol = Math.max(sh.getLastColumn(), 1);
+  const head = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim());
+  const missing = MANUAL_COLS.concat([SOURCE_COL]).filter(c => head.indexOf(c) < 0);
+  if (missing.length) {
+    sh.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]).setFontWeight('bold').setBackground('#fff3e0');
+    head.push.apply(head, missing);
+  }
+  const rows = Math.max(sh.getMaxRows() - 1, 1);
+  // ✎-колонки — простой текст, чтобы даты и рейсы не превращались в числа
+  MANUAL_COLS.forEach(c => { const i = head.indexOf(c); if (i >= 0) sh.getRange(2, i + 1, rows, 1).setNumberFormat('@'); });
+  Object.keys(CHOICES).forEach(c => {
+    const i = head.indexOf(c);
+    if (i < 0) return;
+    const rule = SpreadsheetApp.newDataValidation().requireValueInList(CHOICES[c], true).setAllowInvalid(true).build();
+    sh.getRange(2, i + 1, rows, 1).setDataValidation(rule);
+  });
+  return head;
+}
+
+// Трекер присылает правки сюда.
 function doPost(e) {
+  let data = {};
+  try { data = JSON.parse(e.postData.contents); } catch (err) {}
+  if (data.key !== KEY) return ContentService.createTextOutput('bad key');
   const lock = LockService.getScriptLock();
-  if (lock.tryLock(20000)) { try { syncTracker(); } finally { lock.releaseLock(); } }
+  if (!lock.tryLock(25000)) return ContentService.createTextOutput('busy');
+  try {
+    if (data.ops && data.ops.length) applyOps_(data.ops);
+    refreshLive_();
+  } finally { lock.releaseLock(); }
   return ContentService.createTextOutput('ok');
 }
 
-function syncTracker() {
-  const res = UrlFetchApp.fetch(TRACKER_URL, { muteHttpExceptions: true });
+function applyOps_(ops) {
+  const sh = dataSheet_();
+  const head = ensureColumns_(sh);
+  const col = name => head.indexOf(name);
+  const cPid = col('Participant ID'), cPulse = col('Pulse'), cGoal = col('Цель'), cSrc = col(SOURCE_COL);
+  const last = sh.getLastRow();
+  const values = last > 1 ? sh.getRange(2, 1, last - 1, head.length).getValues() : [];
+  const findRow = op => {
+    for (let i = 0; i < values.length; i++) {
+      const r = values[i];
+      if (op.pid && cPid >= 0 && String(r[cPid]).trim() === op.pid) return i;
+    }
+    if (op.pid) return -1;
+    const n = String(op.nick || '').trim().toLowerCase();
+    for (let i = 0; i < values.length; i++) {
+      const r = values[i];
+      if (cPid >= 0 && String(r[cPid]).trim()) continue;
+      if (cPulse >= 0 && String(r[cPulse]).trim().toLowerCase() === n) return i;
+    }
+    return -1;
+  };
+  ops.forEach(op => {
+    const c = col(op.col);
+    if (c < 0) return;
+    let i = findRow(op);
+    if (i < 0) {
+      if (op.pid || !op.nick) return;            // строка бота пропала — не создаём дубль
+      const row = head.map(() => '');
+      if (cPulse >= 0) row[cPulse] = op.nick;
+      if (cGoal >= 0) row[cGoal] = op.goal || '';
+      if (cSrc >= 0) row[cSrc] = 'трекер';
+      sh.appendRow(row);
+      values.push(row);
+      i = values.length - 1;
+    }
+    values[i][c] = op.value;
+    sh.getRange(i + 2, c + 1).setValue(op.value);
+  });
+}
+
+// Правка руками в таблице → сразу в трекер.
+function onSheetEdit(e) {
+  const sh = e.range.getSheet();
+  if (sh.getSheetId() !== dataSheet_().getSheetId() || e.range.getRow() < 2) return;
+  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim());
+  const cPid = head.indexOf('Participant ID'), cPulse = head.indexOf('Pulse');
+  const user = (Session.getActiveUser().getEmail() || '').split('@')[0];
+  const r0 = e.range.getRow(), c0 = e.range.getColumn();
+  const vals = e.range.getDisplayValues();
+  let other = false;
+  const reqs = [];
+  for (let i = 0; i < vals.length && reqs.length < 60; i++) {
+    const rowVals = sh.getRange(r0 + i, 1, 1, head.length).getDisplayValues()[0];
+    for (let j = 0; j < vals[i].length; j++) {
+      const name = head[c0 - 1 + j];
+      if (MANUAL_COLS.indexOf(name) < 0) { other = true; continue; }
+      reqs.push({ url: TRACKER + '/api/sheet-edit', method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+        payload: JSON.stringify({ key: KEY, col: name, value: String(vals[i][j]), user: user,
+          pid: cPid >= 0 ? String(rowVals[cPid]).trim() : '', nick: cPulse >= 0 ? String(rowVals[cPulse]).trim() : '' }) });
+    }
+  }
+  if (other) reqs.push({ url: TRACKER + '/api/sheet-edit', method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ key: KEY, pull: true }) });
+  if (reqs.length) UrlFetchApp.fetchAll(reqs);
+}
+
+// Лист «Трекер (live)»: полный статус по всем 54 + вне списка, раз в минуту и после каждой правки.
+function syncTracker() { refreshLive_(); }
+
+function refreshLive_() {
+  const res = UrlFetchApp.fetch(TRACKER + '/api/export?key=' + KEY, { muteHttpExceptions: true });
   if (res.getResponseCode() !== 200) throw new Error('Трекер ответил ' + res.getResponseCode());
   const data = JSON.parse(res.getContentText());
   const ss = SpreadsheetApp.getActive();
-  const sh = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME, 0);
+  const sh = ss.getSheetByName(LIVE_SHEET) || ss.insertSheet(LIVE_SHEET, ss.getSheets().length);
   const s = data.summary;
   const head = [['BoostCamp 2026 — живой статус · с нами на 100%: ' + (s.full || 0) + ' / ' + s.target +
     ' · в боте: ' + s.inBot + ' · в работе: ' + (s.work || 0) + ' · не в боте: ' + (s.nobot || 0) +
-    ' · требует решения: ' + (s.decision || 0) + ' · обновлено ' + Utilities.formatDate(new Date(), 'Europe/Moscow', 'dd.MM HH:mm') + ' МСК']];
+    ' · требует решения: ' + (s.decision || 0) + ' · обновлено ' + Utilities.formatDate(new Date(), 'Europe/Moscow', 'dd.MM HH:mm:ss') + ' МСК']];
   const values = [data.headers].concat(data.rows);
   sh.clearContents();
   sh.getRange(1, 1).setValues(head).setFontWeight('bold');
@@ -641,7 +757,7 @@ $('#btnSheets').addEventListener('click', () => {
     : 'Вебхук ещё не настроен.';
   $('#hookExample').textContent = `POST ${origin}/api/hook\nx-hook-secret: <секрет>\nContent-Type: application/json\n\n{"Pulse":"SENSEY","ФИО":"…","Цель":"Цель 3","Telegram username":"…","Рейс прилёта":"TK2424","Дата прилёта":"2026-10-10","Рейс вылета":"PC5015","Participant ID":"…","Дата регистрации":"03.10.2026 10:42 UTC"}`;
   $('#pushUrl').value = (S && S.sheetPushUrl) || '';
-  $('#pushState').textContent = S && S.sheetPushUrl ? '✅ Подключено: каждая правка сразу уходит в таблицу.' : 'Пока не подключено — таблица обновляется раз в минуту по таймеру скрипта.';
+  $('#pushState').textContent = S && S.sheetPushUrl ? '✅ Подключено: правки идут в обе стороны сразу.' : 'Пока не подключено: из таблицы в трекер данные идут раз в минуту, из трекера в таблицу — нет.';
   $('#sheetLink').innerHTML = S && S.sheetId ? `<a href="https://docs.google.com/spreadsheets/d/${encodeURIComponent(S.sheetId)}/edit" target="_blank" rel="noopener">Открыть таблицу «Участники»</a>` : '';
   $('#dlgSheets').showModal();
 });
