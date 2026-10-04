@@ -48,12 +48,12 @@
   .bar .b-full { background:var(--accent) }
   .legend { display:flex; flex-wrap:wrap; gap:14px; font-size:12px; color:var(--ink-2) }
   .legend span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:-1px; background:var(--c) }
-  .stats { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:8px }
   .stat { background:var(--bg-3); border-radius:12px; padding:10px; cursor:pointer; border:1px solid transparent }
   .stat:hover, .stat.on { border-color:var(--accent) }
   .stat b { display:block; font-size:24px; font-weight:800 }
   .stat span { font-size:12px; color:var(--ink-3) }
-  .goals { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px }
+  .goals { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:8px; margin-top:8px }
   .goal-tile { background:var(--bg-3); border-radius:12px; padding:10px; border-left:3px solid var(--gc) }
   .goal-tile .t { font:500 11px var(--mono); text-transform:uppercase; letter-spacing:.06em; color:var(--gc) }
   .goal-tile .n { font-size:13px; color:var(--ink-2); margin-top:4px }
@@ -85,6 +85,8 @@
   .s-nobot { background:#ffffff14; color:var(--ink-2) } .s-decision { background:var(--info-bg); color:var(--info) }
   .s-excluded { background:#ffffff0d; color:var(--ink-3); text-decoration:line-through }
   .missing { font-size:12px; color:var(--ink-3); margin-top:3px }
+  .tag { display:inline-block; margin-left:6px; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; vertical-align:1px }
+  .t-info { background:var(--info-bg); color:var(--info) } .t-bad { background:var(--bad-bg); color:var(--bad) } .t-ok { background:var(--ok-bg); color:var(--ok) }
   .seg { display:inline-flex; border:1px solid var(--line-2); border-radius:9px; overflow:hidden }
   .seg button { border:0; background:transparent; padding:5px 7px; font-size:12px; font-weight:600; color:var(--ink-3); cursor:pointer; white-space:nowrap }
   .seg button + button { border-left:1px solid var(--line) }
@@ -162,7 +164,7 @@
     <div class="actions">
       <button class="btn" id="btnName" title="Имя для ленты событий"></button>
       <button class="btn" id="btnPull" title="Забрать свежие строки из таблицы «Участники» прямо сейчас">⟳ Синхр. с таблицей</button>
-      <button class="btn" id="btnImport">⤒ Загрузить выгрузку бота</button>
+      <button class="btn" id="btnImport" title="Выгрузка бота или список «кто едет» (CSV/xlsx) — тип определится сам">⤒ Загрузить файл</button>
       <button class="btn" id="btnSheets">Google Таблица и бот</button>
       <a class="btn" href="/__logout" style="text-decoration:none;color:var(--ink-2)">Выйти</a>
       <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>
@@ -238,7 +240,8 @@
 const GOALS = {
   3: { name: 'ЦЕЛЬ 3', thr: 'от 250,000 баллов', cover: 'программа 100% · перелёт за счёт компании · подарок', c: 'var(--g3)' },
   2: { name: 'ЦЕЛЬ 2', thr: 'от 100,000 баллов', cover: 'программа 100% · перелёт сам', c: 'var(--g2)' },
-  1: { name: 'ЦЕЛЬ 1', thr: 'от 50,000 баллов', cover: 'программа 50% · перелёт сам', c: 'var(--g1)' },
+  1: { name: 'ЦЕЛЬ 1', thr: 'от 50,000 баллов', cover: 'программа 50% (доплата) · перелёт сам', c: 'var(--g1)' },
+  0: { name: 'БЕЗ ЦЕЛИ', thr: 'меньше 50,000 баллов', cover: 'едет по исключению', c: 'var(--ink-2)' },
 };
 const STATUS = {
   full: { t: '✅ С нами 100%', cls: 's-full' }, work: { t: '🟠 В работе', cls: 's-work' },
@@ -246,7 +249,7 @@ const STATUS = {
   excluded: { t: 'Не участвует', cls: 's-excluded' },
 };
 const FILTERS = [
-  ['all', 'Все'], ['nobot', 'Не в боте'], ['work', 'В работе'], ['full', '100%'], ['decision', 'Требует решения'],
+  ['all', 'Все'], ['nobot', 'Не в боте'], ['work', 'В работе'], ['full', '100%'], ['decision', 'Требует решения'], ['unpaid', 'Доплата не оплачена'],
   ['g3', 'Цель 3'], ['g2', 'Цель 2'], ['g1', 'Цель 1'], ['mine', 'Мои'],
 ];
 
@@ -357,15 +360,15 @@ document.addEventListener('focusout', () => setTimeout(() => {
 function renderSummary() {
   const s = S.summary;
   $('#pFull').innerHTML = `${s.full || 0} <small>/ ${s.target}</small>`;
-  $('#pNote').textContent = `в боте ${s.inBot} из ${s.counted} · квалифицированы ${s.counted}`;
+  $('#pNote').textContent = `в боте ${s.inBot} из ${s.counted} · в списке «кто едет» ${s.counted}`;
   $('#barFull').style.width = Math.min(100, (s.full || 0) / s.target * 100) + '%';
   $('#barBot').style.width = Math.min(100, s.inBot / s.target * 100) + '%';
-  $('#goals').innerHTML = [3, 2, 1].map(g => {
+  $('#goals').innerHTML = [3, 2, 1].concat(s.byGoal[0] ? [0] : []).map(g => {
     const x = s.byGoal[g] || { total: 0, inBot: 0, full: 0 };
     return `<div class="goal-tile" style="--gc:${GOALS[g].c}"><div class="t">${GOALS[g].name} · ${x.total} чел.</div>
       <div class="n">в боте <b>${x.inBot}</b> · 100% <b>${x.full}</b></div></div>`;
   }).join('');
-  const cards = [['full', s.full || 0, 'с нами на 100%'], ['work', s.work || 0, 'в боте, в работе'], ['nobot', s.nobot || 0, 'не перешли в бот'], ['decision', s.decision || 0, 'требуют решения']];
+  const cards = [['full', s.full || 0, 'с нами на 100%'], ['work', s.work || 0, 'в боте, в работе'], ['nobot', s.nobot || 0, 'не перешли в бот'], ['decision', s.decision || 0, 'требуют решения'], ['unpaid', s.unpaid || 0, 'доплата не оплачена']];
   $('#stats').innerHTML = cards.map(([k, n, t]) => `<div class="stat ${filter === k ? 'on' : ''}" data-f="${k}"><b>${n}</b><span>${t}</span></div>`).join('');
 }
 
@@ -383,6 +386,7 @@ function renderFeed() {
 function matches(p) {
   const st = p.st;
   if (filter === 'mine') { const me = myName().toLowerCase(); if (!me || (p.m.owner || '').toLowerCase() !== me) return false; }
+  else if (filter === 'unpaid') { if (!st.surchargeUnpaid || !st.counted) return false; }
   else if (filter.startsWith('g')) { if (String(p.goal) !== filter.slice(1) || !st.counted) return false; }
   else if (filter !== 'all' && st.code !== filter) return false;
   if (query) {
@@ -396,12 +400,12 @@ function matches(p) {
 function renderList() {
   const people = S.people.filter(matches);
   if (!people.length) { $('#list').innerHTML = '<div class="empty">Никого под этот фильтр</div>'; return; }
-  const groups = [3, 2, 1].map(g => ({ g, items: people.filter(p => p.inList && p.goal === g).sort((a, b) => a.num - b.num) }));
+  const groups = [3, 2, 1, 0].map(g => ({ g, items: people.filter(p => p.inList && (p.goal || 0) === g).sort((a, b) => a.num - b.num) }));
   const extra = people.filter(p => !p.inList);
   let html = '';
   for (const { g, items } of groups) {
     if (!items.length) continue;
-    const all = S.people.filter(p => p.inList && p.goal === g);
+    const all = S.people.filter(p => p.inList && (p.goal || 0) === g);
     const full = all.filter(p => p.st.code === 'full').length, inBot = all.filter(p => p.st.inBot).length;
     html += `<section class="group" style="--gc:${GOALS[g].c}"><div class="group-h"><b>${GOALS[g].name}</b><span>${GOALS[g].thr} · ${GOALS[g].cover}</span>
       <span class="cnt">${all.length} чел. · в боте ${inBot} · 100% ${full}</span></div>${items.map(rowHtml).join('')}</section>`;
@@ -424,6 +428,8 @@ function rowHtml(p) {
   const S_ = STATUS[st.code];
   const sub = (b.fio || b.tg ? esc(b.fio || '') + (b.tg ? (b.fio ? ' · ' : '') + '@' + esc(b.tg.replace(/^@/, '')) : '') : `<span class="muted">${p.inList ? (p.vip ? esc(p.vip) + ' · ' : '') + fmtNum(p.points) + ' баллов' : ''}</span>`)
     + (p.bot && !st.regDone ? ` <span style="color:var(--warn)">· ${esc(b.regStatus || 'регистрация не завершена')}</span>` : '');
+  const tags = (p.exception ? `<span class="tag t-info" title="${esc(p.exception)}">условия Цели 2</span>` : '')
+    + (/не\s*оплач/i.test(p.surcharge || '') ? '<span class="tag t-bad">доплата не оплачена</span>' : /оплач/i.test(p.surcharge || '') ? '<span class="tag t-ok">доплата ✅</span>' : '');
   const ticketOpts = st.who === 'company'
     ? [['', 'не куплен'], ['bought', '✅ куплен', 'good']]
     : [['', 'не спросили'], ['asked', 'спросили', 'mid'], ['bought', '✅ купил', 'good']];
@@ -431,7 +437,7 @@ function rowHtml(p) {
   return `<div class="row ${open.has(p.id) ? 'open' : ''} ${st.code === 'full' ? 'full' : ''}" data-id="${esc(p.id)}">
     <div class="row-main" data-toggle="${esc(p.id)}">
       <div class="num">${p.num || '•'}</div>
-      <div class="who"><b>${esc(p.nick)}</b>${b.account && b.account.toLowerCase() !== p.nick.toLowerCase() ? ` <span class="muted" style="font-size:12px">(бот: ${esc(b.account)})</span>` : ''}<div class="sub">${sub}</div></div>
+      <div class="who"><b>${esc(p.nick)}</b>${tags}${b.account && b.account.toLowerCase() !== p.nick.toLowerCase() ? ` <span class="muted" style="font-size:12px">(бот: ${esc(b.account)})</span>` : ''}<div class="sub">${sub}</div></div>
       <div class="c-status"><span class="badge ${S_.cls}">${S_.t}</span>${st.code === 'full' || st.code === 'excluded' ? '' : `<div class="missing">${esc(st.missing.join(' · '))}</div>`}</div>
       <div class="c-hotel"><div class="lbl">Отель${st.housingPaid ? ' · <span style="color:var(--ok)">' + esc(b.housing) + '</span>' : ''}</div>${seg(p, 'hotel', [['', 'нет'], ['requested', 'запрос', 'mid'], ['confirmed', '✅ бронь', 'good']])}</div>
       <div class="c-ticket"><div class="lbl">${st.byCar ? 'Едет на машине' : 'Билет · ' + (st.who === 'company' ? 'покупаем мы' + (st.passportOk ? ' · паспорт ✅' : ' · паспорта нет') : 'покупает сам')}</div>${seg(p, 'ticket', ticketOpts)}</div>
@@ -478,7 +484,7 @@ function detailsHtml(p) {
   } else {
     h += '<span class="muted">В таблице «Участники» заявки нет — пишем/звоним, при молчании подключаем спонсора.</span>';
   }
-  if (p.inList) h += `<br><span class="muted">PDF: №${p.num} · ${esc(p.vip)} · ${fmtNum(p.points)} баллов${p.alts.length ? ' · другие аккаунты: ' + esc(p.alts.join(', ')) : ''}${p.pdfNote ? ' · ' + esc(p.pdfNote) : ''}</span>`;
+  if (p.inList) h += `<br><span class="muted">Список «кто едет»: №${p.num} · ${fmtNum(p.points)} баллов · ${p.goal ? 'Цель ' + p.goal : 'без цели'}${p.exception ? ' · исключение: ' + esc(p.exception) : ''}${p.surcharge ? ' · доплата: ' + esc(p.surcharge) : ''}${p.vip ? ' · ' + esc(p.vip) : ''}${p.alts && p.alts.length ? ' · другие аккаунты: ' + esc(p.alts.join(', ')) : ''}${p.pdfNote ? ' · ' + esc(p.pdfNote) : ''}</span>`;
   h += '</div>';
   return h;
 }
@@ -575,16 +581,27 @@ $('#fileInput').addEventListener('change', async e => {
   if (!file) return;
   try {
     await loadXlsx();
-    const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+    let wb;
+    if (/\.csv$/i.test(file.name)) {
+      // CSV бывает с «;» — подсказываем разделитель по первой строке
+      const text = (await file.text()).replace(/^\ufeff/, '');
+      const first = text.split('\n')[0];
+      wb = XLSX.read(text, { type: 'string', FS: (first.split(';').length > first.split(',').length) ? ';' : ',', raw: true });
+    } else wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { raw: true, defval: '' }).map(r => {
       const o = {}; for (const [k, v] of Object.entries(r)) o[k.trim()] = cellValue(v); return o;
     });
-    const r = await fetch('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows, by: myName() || askName(), fileName: file.name }) });
+    const keys = Object.keys(rows[0] || {}).map(k => k.toLowerCase());
+    const isRoster = keys.includes('никнейм') && keys.includes('баллы');
+    if (isRoster && !confirm(`Это список «кто едет» (${rows.length} строк). Заменить им текущий список участников? Кого в нём нет — уберём.`)) return;
+    const r = await fetch(isRoster ? '/api/roster' : '/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows, by: myName() || askName(), fileName: file.name }) });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || r.status);
     const x = data.report;
-    toast(`Выгрузка загружена: новых ${x.added}, обновлено ${x.updated}, вне списка ${x.extra}, тестовых пропущено ${x.skipped}`);
+    toast(isRoster
+      ? `Список обновлён: ${x.total} чел. · добавлено ${x.added.length + x.moved.length + x.promoted.length} · убрано ${x.removed.length}`
+      : `Выгрузка загружена: новых ${x.added}, обновлено ${x.updated}, вне списка ${x.extra}, тестовых пропущено ${x.skipped}`);
     load(true);
   } catch (err) {
     toast('Не удалось загрузить файл: ' + err.message, true);

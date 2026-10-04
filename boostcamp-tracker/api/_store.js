@@ -24,6 +24,12 @@ export const GOAL_TARGET = 50;
 
 let SEED = { people: [] };
 
+// Официальный список «кто едет» (никнейм, баллы, цель, исключение, доплата).
+// Вшитая версия применяется один раз — при первом чтении базы после деплоя.
+async function loadRoster() {
+  try { return (await import('./_roster.js')).ROSTER; } catch { return null; }
+}
+
 async function readRaw() {
   let meta;
   try { meta = await head(PATH); } catch (e) {
@@ -52,7 +58,15 @@ async function writeRaw(state, etag) {
 
 export async function loadState() {
   const raw = await readRaw();
-  if (raw) return raw.state;
+  if (raw) {
+    const R = await loadRoster();
+    if (R && !(raw.state.rosterVersions || []).includes(R.version)) {
+      return mutate(s => {
+        if (!(s.rosterVersions || []).includes(R.version)) applyRoster(s, R.rows, { by: 'система', version: R.version, source: R.source });
+      });
+    }
+    return raw.state;
+  }
   // Первый запуск: собираем базу из сида и сохраняем.
   return mutate(s => s);
 }
@@ -65,6 +79,7 @@ export async function mutate(fn) {
     const raw = await readRaw();
     if (!raw) SEED = await loadSeed();
     const state = raw ? raw.state : initialState();
+    if (!raw) { const R = await loadRoster(); if (R) applyRoster(state, R.rows, { by: 'система', version: R.version, source: R.source }); }
     // Если версия «не совпала», а файл за это время никто не менял (та же
     // отметка updatedAt) — конфликт ложный: пишем без проверки версии,
     // чтобы правка не потерялась.
@@ -477,6 +492,85 @@ export function syncManualFromRows(state, rows, headers) {
   return { applied, wipe };
 }
 
+// ---------- список «кто едет» ----------
+//
+// Строки: { 'Никнейм', 'Баллы', 'Цель', 'Исключение', 'Доплата' }.
+// Кого нет в списке — убираем (если по человеку есть заявка в боте или
+// отметки — оставляем «вне списка» с пометкой, чтобы ничего не потерять).
+// Кто появился — добавляем; если это бывший «второй аккаунт», чья заявка
+// висела на основном (anita → annapulse), заявку и отметки переносим.
+
+export function parseRosterRows(rows) {
+  const out = [];
+  for (const row of rows) {
+    const r = {};
+    for (const [k, v] of Object.entries(row || {})) r[String(k).trim().toLowerCase()] = String(v ?? '').trim();
+    const nick = r['никнейм'] || r['ник'] || r['nick'] || r['pulse'];
+    if (!nick) continue;
+    const g = (r['цель'] || '').match(/\d/);
+    out.push({
+      nick,
+      points: Number(String(r['баллы'] || '').replace(/[^\d.]/g, '')) || null,
+      goal: g ? Number(g[0]) : 0,
+      exception: r['исключение'] || '',
+      surcharge: r['доплата'] || '',
+    });
+  }
+  return out;
+}
+
+export function applyRoster(state, rows, { by = 'кто-то', version = '', source = '' } = {}) {
+  const list = parseRosterRows(rows);
+  if (list.length < 10) throw new Error('В списке меньше 10 строк — похоже, не тот файл');
+  const inRoster = new Set(list.map(r => lc(r.nick)));
+  const report = { total: list.length, added: [], removed: [], moved: [], promoted: [] };
+  const hasData = p => !!p.bot || Object.values(p.m || {}).some(v => v);
+
+  list.forEach((r, i) => {
+    const n = lc(r.nick);
+    let p = state.people.find(x => lc(x.nick) === n);
+    if (p && !p.inList) report.promoted.push(r.nick);
+    if (!p) {
+      // заявка этого ника висит на другом человеке (вход через второй аккаунт)
+      const host = state.people.find(x => x.bot && lc(x.bot.account) === n && lc(x.nick) !== n);
+      p = { id: 'r' + n.replace(/[^a-z0-9]/g, '').slice(0, 24) + (state.people.length + 1), nick: r.nick, vip: '', alts: [], pdfNote: '', bot: null, m: {}, mAt: {} };
+      if (host) {
+        p.bot = host.bot; p.m = host.m || {}; p.mAt = host.mAt || {}; p.sheetM = host.sheetM;
+        host.bot = null; host.m = {}; host.mAt = {}; delete host.sheetM;
+        report.moved.push(`${r.nick} ← ${host.nick}`);
+      } else report.added.push(r.nick);
+      state.people.push(p);
+    }
+    Object.assign(p, {
+      inList: true, num: i + 1, points: r.points, goal: r.goal,
+      exception: r.exception, surcharge: r.surcharge, decisionReason: '',
+    });
+  });
+
+  for (const p of [...state.people]) {
+    if (!p.inList || inRoster.has(lc(p.nick))) continue;
+    report.removed.push(p.nick);
+    if (hasData(p)) {
+      p.inList = false; p.num = null;
+      p.decisionReason = `Нет в списке «кто едет»${version ? ' (' + version + ')' : ''}, но по человеку есть заявка или отметки. Он едет?`;
+    } else {
+      state.people.splice(state.people.indexOf(p), 1);
+    }
+  }
+  // вторые аккаунты, которые теперь отдельные участники, — не «другие аккаунты»
+  for (const p of state.people) if (p.alts) p.alts = p.alts.filter(a => !inRoster.has(lc(a)));
+
+  state.rosterVersions = [...(state.rosterVersions || []), version || ('загрузка ' + new Date().toISOString())];
+  state.rosterSource = source || state.rosterSource || '';
+  addEvent(state, { by, kind: 'info', text:
+    `Список «кто едет» обновлён${source ? ' (' + source + ')' : ''}: ${list.length} чел.` +
+    (report.added.length ? ` · добавлены: ${report.added.join(', ')}` : '') +
+    (report.promoted.length ? ` · из «вне списка» в список: ${report.promoted.join(', ')}` : '') +
+    (report.moved.length ? ` · заявка перенесена: ${report.moved.join(', ')}` : '') +
+    (report.removed.length ? ` · убраны: ${report.removed.join(', ')}` : '') });
+  return report;
+}
+
 // ---------- ручные отметки ----------
 
 export const MANUAL_FIELDS = {
@@ -506,7 +600,9 @@ export function computeStatus(p) {
   const passport = (b.passport || '').toLowerCase();
   const byCar = /машин/.test(passport);
   const selfFromSheet = /сам/.test(passport);
-  const who = m.ticketWho || (selfFromSheet ? 'self' : (p.goal === 3 ? 'company' : 'self'));
+  const cond = p.exception ? Math.max(2, p.goal || 0) : p.goal; // по исключению — условия Цели 2
+  const who = m.ticketWho || (selfFromSheet ? 'self' : (cond === 3 ? 'company' : 'self'));
+  const surchargeUnpaid = /не\s*оплач/i.test(p.surcharge || '');
   const passportOk = /^загружен/.test(passport);
   const arrFlight = m.arrFlight || b.arrFlight || '';
   const depFlight = m.depFlight || b.depFlight || '';
@@ -521,23 +617,25 @@ export function computeStatus(p) {
     if (who === 'company') missing.push(passportOk ? 'купить билет (паспорт есть)' : 'получить паспорт и купить билет');
     else missing.push(m.ticket === 'asked' ? 'ждём номер рейса' : 'спросить, купил ли билет, и номер рейса');
   }
+  if (surchargeUnpaid) missing.push('доплата за программу не оплачена');
   let code;
   if (excluded) code = 'excluded';
   else if (!p.inList && !m.decision) code = 'decision';
   else if (!inBot) code = 'nobot';
-  else if (regDone && hotelOk && ticketOk) code = 'full';
+  else if (regDone && hotelOk && ticketOk && !surchargeUnpaid) code = 'full';
   else code = 'work';
-  return { code, counted: counted && !excluded, inBot, regDone, who, byCar, passportOk, housingPaid, arrFlight, depFlight, hotelOk, ticketOk, missing };
+  return { code, counted: counted && !excluded, inBot, regDone, who, cond, surchargeUnpaid, byCar, passportOk, housingPaid, arrFlight, depFlight, hotelOk, ticketOk, missing };
 }
 
 export function summary(state) {
-  const s = { target: GOAL_TARGET, counted: 0, full: 0, work: 0, nobot: 0, decision: 0, inBot: 0, byGoal: {} };
+  const s = { target: GOAL_TARGET, counted: 0, full: 0, work: 0, nobot: 0, decision: 0, inBot: 0, unpaid: 0, byGoal: {} };
   for (const p of state.people) {
     const st = computeStatus(p);
     if (st.code === 'decision') s.decision++;
     if (!st.counted) continue;
     s.counted++;
     if (st.inBot) s.inBot++;
+    if (st.surchargeUnpaid) s.unpaid++;
     s[st.code] = (s[st.code] || 0) + 1;
     const g = (s.byGoal[p.goal] = s.byGoal[p.goal] || { total: 0, full: 0, inBot: 0 });
     g.total++; if (st.inBot) g.inBot++; if (st.code === 'full') g.full++;

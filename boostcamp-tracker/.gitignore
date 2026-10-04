@@ -3,3 +3,4 @@
 api/_seed.js
 node_modules/
 .vercel/
+api/_roster.js

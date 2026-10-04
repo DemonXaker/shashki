@@ -4,13 +4,13 @@
 //   format=events&since=<ISO> — лента событий после момента since
 import { loadState, pullSheet, computeStatus, summary, json, sameSecret } from './_store.js';
 
-const GOAL = g => (g ? `Цель ${g}` : '—');
+const GOAL = g => (g ? `Цель ${g}` : 'без цели');
 const STATUS = { full: '✅ С нами 100%', work: '🟠 В работе', nobot: '⚪ Не в боте', decision: '❓ Требует решения', excluded: '✖ Не участвует' };
 const HOTEL = { '': '—', requested: 'запрошена', confirmed: '✅ подтверждена' };
 const TICKET = { '': '—', asked: 'спросили', bought: '✅ куплен' };
 
 export function toRows(state) {
-  const headers = ['№', 'Ник Pulse', 'Цель', 'Баллы', 'Статус', 'Чего не хватает', 'В боте', 'ФИО', 'Telegram', 'Телефон',
+  const headers = ['№', 'Ник Pulse', 'Цель', 'Баллы', 'Статус', 'Исключение', 'Доплата', 'Чего не хватает', 'В боте', 'ФИО', 'Telegram', 'Телефон',
     'Регистрация в боте (статус)', 'Паспорт / билет (таблица)', 'Проживание (таблица)', 'Отель', 'Билет покупает', 'Билет', 'Рейс туда', 'Дата прилёта', 'Рейс обратно', 'Ответственный', 'Спонсор', 'Комментарий',
     'Регистрация в боте', 'Другие аккаунты', 'Примечание'];
   const order = { 3: 0, 2: 1, 1: 2, 0: 3 };
@@ -18,7 +18,7 @@ export function toRows(state) {
     (Number(!a.inList) - Number(!b.inList)) || (order[a.goal] - order[b.goal]) || ((a.num || 999) - (b.num || 999)));
   const rows = people.map(p => {
     const st = computeStatus(p); const m = p.m || {}; const b = p.bot || {};
-    return [p.num || '', p.nick, GOAL(p.goal), p.points || '', STATUS[st.code], st.code === 'full' ? '' : st.missing.join(', '),
+    return [p.num || '', p.nick, GOAL(p.goal), p.points || '', STATUS[st.code], p.exception || '', p.surcharge || '', st.code === 'full' ? '' : st.missing.join(', '),
       st.inBot ? '✅' : '—', b.fio || '', b.tg ? '@' + b.tg.replace(/^@/, '') : '', m.phone || '',
       b.regStatus || '', b.passport || '', b.housing || '',
       st.housingPaid && !m.hotel ? '✅ оплачено (таблица)' : HOTEL[m.hotel || ''], st.byCar ? 'едет на машине' : (st.who === 'company' ? 'мы' : 'сам'), TICKET[m.ticket || ''] + (st.who === 'self' && !m.ticket && st.arrFlight ? ' (рейс указан)' : ''),
